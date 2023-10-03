@@ -252,6 +252,19 @@ int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, ui
     return 0;
 }
 
+int dump_value_investigate(void *ptr, size_t size, size_t nmemb, const char* file_name) {
+    FILE *fp;
+    fp = fopen(file_name, "wb");
+    if (fp == NULL) {
+        fprintf(stderr, "failed to open %s\n", file);
+        return -1;
+    }
+
+    fwrite(ptr, size, nmemb, fp);
+    
+    return fclose(fp);
+}
+
 int wasm_dump_addrs(
         WASMInterpFrame *frame,
         WASMFunctionInstance *func,
@@ -281,6 +294,7 @@ int wasm_dump_addrs(
     // register uint32 *frame_sp = NULL;
     p_offset = frame_sp - frame->sp_bottom;
     dump_value(&p_offset, sizeof(uint32), 1, fp);
+    dump_value_investigate(&p_offset, sizeof(uint32), 1, "sp.img");
 
     // WASMBranchBlock *frame_csp = NULL;
     p_offset = frame_csp - frame->csp_bottom;
