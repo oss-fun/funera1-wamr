@@ -294,7 +294,7 @@ int wasm_dump_addrs(
     // register uint32 *frame_sp = NULL;
     p_offset = frame_sp - frame->sp_bottom;
     dump_value(&p_offset, sizeof(uint32), 1, fp);
-    dump_value_investigate(frame->sp_bottom, sizeof(uint32), p_offset, "sp.img");
+    // dump_value_investigate(frame->sp_bottom, sizeof(uint32), p_offset, "sp.img");
 
     // WASMBranchBlock *frame_csp = NULL;
     p_offset = frame_csp - frame->csp_bottom;

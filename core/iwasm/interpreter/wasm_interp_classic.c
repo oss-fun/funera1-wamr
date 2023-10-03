@@ -320,26 +320,22 @@ read_leb(const uint8 *buf, uint32 *p_offset, uint32 maxbits, bool sign)
 
 #define PUSH_I32(value)                        \
     do {                                       \
-        printf("PUSH_I32: %d\n", value);       \
         *(int32 *)frame_sp++ = (int32)(value); \
     } while (0)
 
 #define PUSH_F32(value)                            \
     do {                                           \
-        printf("PUSH_F32: %f\n", value);       \
         *(float32 *)frame_sp++ = (float32)(value); \
     } while (0)
 
 #define PUSH_I64(value)                   \
     do {                                  \
-        printf("PUSH_I64: %ld\n", value); \
         PUT_I64_TO_ADDR(frame_sp, value); \
         frame_sp += 2;                    \
     } while (0)
 
 #define PUSH_F64(value)                   \
     do {                                  \
-        printf("PUSH_F64: %lf\n", value); \
         PUT_F64_TO_ADDR(frame_sp, value); \
         frame_sp += 2;                    \
     } while (0)
@@ -1264,6 +1260,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
                         &memory, &globals, &global_data, &global_addr,
                         &frame, &frame_ip, &frame_lp, &frame_sp, &frame_csp,
                         &frame_ip_end, &else_addr, &end_addr, &maddr, &done_flag);
+        printf("stack top is %d\n", *(int32 *)(frame_sp-1));
         if (rc < 0) {
             // error
             perror("failed to restore\n");
@@ -1303,6 +1300,7 @@ restore_point:
 migration_async:
     if (sig_flag) {
         SYNC_ALL_TO_FRAME();
+        printf("stack top is %d\n", *(int32 *)(frame_sp-1));
         int rc = wasm_dump(exec_env, module, memory, 
             globals, global_data, global_addr, cur_func,
             frame, frame_ip, frame_sp, frame_csp,
