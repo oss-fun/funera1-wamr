@@ -320,22 +320,26 @@ read_leb(const uint8 *buf, uint32 *p_offset, uint32 maxbits, bool sign)
 
 #define PUSH_I32(value)                        \
     do {                                       \
+        printf("PUSH_I32: %d\n", value);       \
         *(int32 *)frame_sp++ = (int32)(value); \
     } while (0)
 
 #define PUSH_F32(value)                            \
     do {                                           \
+        printf("PUSH_F32: %f\n", value);       \
         *(float32 *)frame_sp++ = (float32)(value); \
     } while (0)
 
 #define PUSH_I64(value)                   \
     do {                                  \
+        printf("PUSH_I64: %ld\n", value); \
         PUT_I64_TO_ADDR(frame_sp, value); \
         frame_sp += 2;                    \
     } while (0)
 
 #define PUSH_F64(value)                   \
     do {                                  \
+        printf("PUSH_F64: %lf\n", value); \
         PUT_F64_TO_ADDR(frame_sp, value); \
         frame_sp += 2;                    \
     } while (0)
