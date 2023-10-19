@@ -32,18 +32,21 @@ dump_WASMInterpFrame(struct WASMInterpFrame *frame, WASMExecEnv *exec_env, FILE 
     // struct WASMFunctionInstance *function;
     // uint8 *ip;
     uint32 ip_offset = frame->ip - wasm_get_func_code(frame->function);
+    printf("ip_offset: %d\n", ip_offset);
     fwrite(&ip_offset, sizeof(uint32), 1, fp);
 
     // uint32 *sp_bottom;
     // uint32 *sp_boundary;
     // uint32 *sp;
     uint32 sp_offset = frame->sp - frame->sp_bottom;
+    printf("sp_offset: %d\n", sp_offset);
     fwrite(&sp_offset, sizeof(uint32), 1, fp);
 
     // WASMBranchBlock *csp_bottom;
     // WASMBranchBlock *csp_boundary;
     // WASMBranchBlock *csp;
     uint32 csp_offset = frame->csp - frame->csp_bottom;
+    printf("csp_offset: %d\n", csp_offset);
     fwrite(&csp_offset, sizeof(uint32), 1, fp);
 
     // uint32 lp[1];
@@ -59,11 +62,13 @@ dump_WASMInterpFrame(struct WASMInterpFrame *frame, WASMExecEnv *exec_env, FILE 
             case VALUE_TYPE_I32:
             case VALUE_TYPE_F32:
                 fwrite(lp, sizeof(uint32), 1, fp);
+                printf("lp: %d\n", *(uint32 *)lp);
                 lp++;
                 break;
             case VALUE_TYPE_I64:
             case VALUE_TYPE_F64:
                 fwrite(lp, sizeof(uint64), 1, fp);
+                printf("lp: %d\n", *(uint64 *)lp);
                 lp += 2;
                 break;
             default:
@@ -76,11 +81,13 @@ dump_WASMInterpFrame(struct WASMInterpFrame *frame, WASMExecEnv *exec_env, FILE 
             case VALUE_TYPE_I32:
             case VALUE_TYPE_F32:
                 fwrite(lp, sizeof(uint32), 1, fp);
+                printf("lp: %d\n", *(uint32 *)lp);
                 lp++;
                 break;
             case VALUE_TYPE_I64:
             case VALUE_TYPE_F64:
                 fwrite(lp, sizeof(uint64), 1, fp);
+                printf("lp: %d\n", *(uint64 *)lp);
                 lp += 2;
                 break;
             default:
@@ -95,40 +102,48 @@ dump_WASMInterpFrame(struct WASMInterpFrame *frame, WASMExecEnv *exec_env, FILE 
     uint32 csp_num = frame->csp - frame->csp_bottom;
     
 
+    printf("csp_num: %d\n", csp_num);
     for (i = 0; i < csp_num; i++, csp++) {
         // uint8 *begin_addr;
         uint64 addr;
         if (csp->begin_addr == NULL) {
             addr = -1;
             fwrite(&addr, sizeof(uint64), 1, fp);
+            printf("begin_addr: %d\n", addr);
         }
         else {
             addr = csp->begin_addr - wasm_get_func_code(frame->function);
             fwrite(&addr, sizeof(uint64), 1, fp);
+            printf("begin_addr: %d\n", addr);
         }
 
         // uint8 *target_addr;
         if (csp->target_addr == NULL) {
             addr = -1;
             fwrite(&addr, sizeof(uint64), 1, fp);
+            printf("target_addr: %d\n", addr);
         }
         else {
             addr = csp->target_addr - wasm_get_func_code(frame->function);
             fwrite(&addr, sizeof(uint64), 1, fp);
+            printf("target_addr: %d\n", addr);
         }
 
         // uint32 *frame_sp;
         if (csp->frame_sp == NULL) {
             addr = -1;
             fwrite(&addr, sizeof(uint64), 1, fp);
+            printf("sp_offset: %d\n", addr);
         }
         else {
             addr = csp->frame_sp - frame->sp_bottom;
             fwrite(&addr, sizeof(uint64), 1, fp);
+            printf("sp_offset: %d\n", addr);
         }
 
         // uint32 cell_num;
         fwrite(&csp->cell_num, sizeof(uint32), 1, fp);
+        printf("result_cells: %d\n", csp->cell_num);
     }
 }
 
@@ -189,14 +204,17 @@ wasm_dump_frame(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
         if (frame->function == NULL) {
             // 初期フレーム
             uint32 func_idx = -1;
+            printf("func_idx: %d\n", func_idx);
             fwrite(&func_idx, sizeof(uint32), 1, fp);
             fwrite(&all_cell_num_of_dummy_frame, sizeof(uint32), 1, fp);
         }
         else {
             uint32 func_idx = frame->function - module->e->functions;
+            printf("func_idx: %d\n", func_idx);
             fwrite(&func_idx, sizeof(uint32), 1, fp);
             dump_WASMInterpFrame(frame, exec_env, fp);
         }
+        printf("\n");
     } while(rf = rf->next);
 
     fclose(fp);
