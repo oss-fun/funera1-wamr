@@ -169,6 +169,7 @@ restore_WASMInterpFrame(WASMInterpFrame *frame, WASMExecEnv *exec_env, FILE *fp)
 
         // uint32 cell_num;
         fread(&csp->cell_num, sizeof(uint32), 1, fp);
+        csp->cell_num = 0;
     }
 }
 

@@ -143,7 +143,7 @@ dump_WASMInterpFrame(struct WASMInterpFrame *frame, WASMExecEnv *exec_env, FILE 
 
         // uint32 cell_num;
         fwrite(&csp->cell_num, sizeof(uint32), 1, fp);
-        printf("result_cells: %d\n", csp->cell_num);
+        // printf("result_cells: %d\n", csp->cell_num);
     }
 }
 
