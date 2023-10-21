@@ -62,13 +62,13 @@ dump_WASMInterpFrame(struct WASMInterpFrame *frame, WASMExecEnv *exec_env, FILE 
             case VALUE_TYPE_I32:
             case VALUE_TYPE_F32:
                 fwrite(lp, sizeof(uint32), 1, fp);
-                printf("lp: %d\n", *(uint32 *)lp);
+                printf("lp: %032d\n", *(uint32 *)lp);
                 lp++;
                 break;
             case VALUE_TYPE_I64:
             case VALUE_TYPE_F64:
                 fwrite(lp, sizeof(uint64), 1, fp);
-                printf("lp: %d\n", *(uint64 *)lp);
+                printf("lp: %064d\n", *(uint64 *)lp);
                 lp += 2;
                 break;
             default:
@@ -81,13 +81,13 @@ dump_WASMInterpFrame(struct WASMInterpFrame *frame, WASMExecEnv *exec_env, FILE 
             case VALUE_TYPE_I32:
             case VALUE_TYPE_F32:
                 fwrite(lp, sizeof(uint32), 1, fp);
-                printf("lp: %d\n", *(uint32 *)lp);
+                printf("lp: %032d\n", *(uint32 *)lp);
                 lp++;
                 break;
             case VALUE_TYPE_I64:
             case VALUE_TYPE_F64:
                 fwrite(lp, sizeof(uint64), 1, fp);
-                printf("lp: %d\n", *(uint64 *)lp);
+                printf("lp: %064d\n", *(uint64 *)lp);
                 lp += 2;
                 break;
             default:
