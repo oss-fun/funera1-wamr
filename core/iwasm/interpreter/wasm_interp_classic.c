@@ -1295,6 +1295,8 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
     uint32 dispatch_count = 0;
     // uint32 dispatch_limit = 10000-20;
     uint32 dispatch_limit = -1;
+    clock_t start, end;
+
 #if !defined(OS_ENABLE_HW_BOUND_CHECK) \
     || WASM_CPU_SUPPORTS_UNALIGNED_ADDR_ACCESS == 0
 #if WASM_CONFIGUABLE_BOUNDS_CHECKS != 0
@@ -1323,6 +1325,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
     signal(SIGINT, &wasm_interp_sigint);
 
     if (get_restore_flag()) {
+        start = clock();
         // bool done_flag;
         int rc;
         frame = wasm_restore_frame(&exec_env);
@@ -1354,23 +1357,9 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
         }
 
         UPDATE_ALL_FROM_FRAME();
-        // if (!done_flag) {
-        //     // TODO: I haven't understood the think of this line developer.
-        //     printf("goto hanele_op_call\n");
-        //     goto handle_op_call;
-        // }
-        // restoreしたものがもとのdumpファイルと一致しているかを確かめる処理
-        if (0) {
-            SYNC_ALL_TO_FRAME();
-            int rc = wasm_dump(exec_env, module, memory, 
-                globals, global_data, global_addr, cur_func,
-                frame, frame_ip, frame_sp, frame_csp,
-                frame_ip_end, else_addr, end_addr, maddr, done_flag);
-            if (rc < 0) {
-                perror("failed to dump\n");
-                exit(1);
-            }
-        }
+        end = clock();
+        fprintf(stderr, "restore: %f[ms]\n", (double)(end - start) / CLOCKS_PER_SEC * 1000.0);
+
         FETCH_OPCODE_AND_DISPATCH();
     }
 
@@ -1385,6 +1374,8 @@ restore_point:
 #else
 migration_async:
     if (sig_flag) {
+        start = clock();
+
         SYNC_ALL_TO_FRAME();
         int rc = wasm_dump(exec_env, module, memory, 
             globals, global_data, global_addr, cur_func,
@@ -1394,6 +1385,9 @@ migration_async:
             perror("failed to dump\n");
             exit(1);
         }
+        end = clock();
+        fprintf(stderr, "snapshot: %f[ms]\n", (double)(end - start) / CLOCKS_PER_SEC * 1000.0);
+
         exit(0);     
     }
     FETCH_OPCODE_AND_DISPATCH();
