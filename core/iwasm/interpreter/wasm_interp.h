@@ -51,6 +51,13 @@ typedef struct WASMInterpFrame {
     WASMBranchBlock *csp_boundary;
     WASMBranchBlock *csp;
 
+    // type stack
+    // TODO: 型サイズを小さくする
+    uint32 *tsp_bottom;
+    uint32 *tsp_boundary;
+    uint32 *tsp;
+    uint32 vpos;
+
     /**
      * Frame data, the layout is:
      *  lp: parameters and local variables

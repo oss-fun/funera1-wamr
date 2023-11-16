@@ -612,7 +612,9 @@ typedef struct WASMBranchBlock {
     uint8 *begin_addr;
     uint8 *target_addr;
     uint32 *frame_sp;
+    uint32 *frame_tsp;
     uint32 cell_num;
+    uint32 count; // cell_numは32bitのセルの個数だが、これは値の個数
 } WASMBranchBlock;
 
 /**

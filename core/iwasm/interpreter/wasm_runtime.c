@@ -686,6 +686,8 @@ functions_instantiate(const WASMModule *module, WASMModuleInstance *module_inst,
         function->ret_cell_num = import->u.function.func_type->ret_cell_num;
         function->param_count =
             (uint16)function->u.func_import->func_type->param_count;
+        function->result_count = 
+            (uint16)function->u.func_import->func_type->param_count;
         function->param_types = function->u.func_import->func_type->types;
         function->local_cell_num = 0;
         function->local_count = 0;
@@ -709,6 +711,8 @@ functions_instantiate(const WASMModule *module, WASMModuleInstance *module_inst,
 
         function->param_count =
             (uint16)function->u.func->func_type->param_count;
+        function->result_count =
+            (uint16)function->u.func->func_type->result_count;
         function->local_count = (uint16)function->u.func->local_count;
         function->param_types = function->u.func->func_type->types;
         function->local_types = function->u.func->local_types;

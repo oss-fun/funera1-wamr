@@ -147,6 +147,8 @@ struct WASMFunctionInstance {
     bool is_import_func;
     /* parameter count */
     uint16 param_count;
+    /* return varaiable count */
+    uint16 result_count;
     /* local variable count, 0 for import function */
     uint16 local_count;
     /* cell num of parameters */
