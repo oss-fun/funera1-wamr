@@ -1099,7 +1099,12 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
 #if WASM_ENABLE_LABELS_AS_VALUES != 0
 
 #define HANDLE_OP(opcode) HANDLE_##opcode:
-#define FETCH_OPCODE_AND_DISPATCH() goto *handle_table[*frame_ip++];
+#define FETCH_OPCODE_AND_DISPATCH()                                     \
+do {                                                                    \
+    dispatch_count++;                                                   \
+    CHECK_DUMP()                                                        \
+    goto *handle_table[*frame_ip++];                                    \
+} while(0);
 
 #if WASM_ENABLE_THREAD_MGR != 0 && WASM_ENABLE_DEBUG_INTERP != 0
 #define HANDLE_OP_END()                                                   \
@@ -1119,13 +1124,26 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
         goto *handle_table[*frame_ip++];                                  \
     } while (0)
 #else
+
+#if BH_DEBUG != 1
+#define DISPATCH_LIMIT()                                                        \
+    do {                                                                        \
+        if (dispatch_count == dispatch_limit) {                                 \
+            sig_flag = true;                                                    \
+        }                                                                       \
+    } while(0);
+#else
+#define DISPATCH_LIMIT() 
+#endif
+
 #define CHECK_DUMP()                                                        \
+    DISPATCH_LIMIT();                                                       \
     if (sig_flag) {                                                         \
         goto migration_async;                                               \
     }
 #define HANDLE_OP_END()                                                     \
     do {                                                                    \
-        CHECK_DUMP()                                                        \
+        CHECK_DUMP();                                                       \
         FETCH_OPCODE_AND_DISPATCH()                                         \
     } while(0);
 #endif
@@ -1206,6 +1224,8 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
     uint8 *else_addr, *end_addr, *maddr = NULL;
     uint32 local_idx, local_offset, global_idx;
     uint8 local_type, *global_addr;
+    uint32 dispatch_count = 0;
+    uint32 dispatch_limit = 1000;
     uint32 cache_index, type_index, param_cell_num, cell_num;
     uint8 value_type;
 #if !defined(OS_ENABLE_HW_BOUND_CHECK) \
