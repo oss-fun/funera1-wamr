@@ -8,6 +8,8 @@
 #include "wasm_restore.h"
 
 static bool restore_flag;
+double restore_framestack_time, restore_valstack_time, restore_ctrlstack_time;
+
 void set_restore_flag(bool f)
 {
     restore_flag = f;
@@ -79,6 +81,9 @@ restore_WASMInterpFrame(WASMInterpFrame *frame, WASMExecEnv *exec_env, FILE *fps
     FILE *fp = fps[0];
     FILE *fp2 = fps[1];
     FILE *tsp_fp = fps[2];
+    time_t start, end;
+
+    start = clock();
 
     // struct WASMInterpFrame *prev_frame;
     // struct WASMFunctionInstance *function;
@@ -118,8 +123,11 @@ restore_WASMInterpFrame(WASMInterpFrame *frame, WASMExecEnv *exec_env, FILE *fps
     fread(&tsp_offset, sizeof(uint32), 1, tsp_fp);
     frame->tsp = frame->tsp_bottom + tsp_offset;
 
+    end = clock();
+    restore_framestack_time += (double)(end-start) / CLOCKS_PER_SEC * 1000.0;
     // =========================================================
 
+    start = clock();
     // uint32 lp[1];
     uint32 *lp = frame->lp;
     // VALUE_TYPE_I32
@@ -162,8 +170,12 @@ restore_WASMInterpFrame(WASMInterpFrame *frame, WASMExecEnv *exec_env, FILE *fps
     }
 
     fread(frame->sp_bottom, sizeof(uint32), sp_offset, fp);
+    end = clock();
+    restore_valstack_time += (double)(end-start) / CLOCKS_PER_SEC * 1000.0;
+
     fread(frame->tsp_bottom, sizeof(uint32), tsp_offset, tsp_fp);
 
+    start = clock();
     WASMBranchBlock *csp = frame->csp_bottom;
     uint32 csp_num = frame->csp - frame->csp_bottom;
 
@@ -210,6 +222,8 @@ restore_WASMInterpFrame(WASMInterpFrame *frame, WASMExecEnv *exec_env, FILE *fps
         // uint32 count;
         fread(&csp->count, sizeof(uint32), 1, fp2);
     }
+    end = clock();
+    restore_ctrlstack_time += (double)(end-start) / CLOCKS_PER_SEC * 1000.0;
 }
 
 WASMInterpFrame*
@@ -222,6 +236,9 @@ wasm_restore_frame(WASMExecEnv **_exec_env)
     WASMFunctionInstance *function;
     uint32 func_idx, frame_size, all_cell_num;
     FILE *fp;
+    time_t start, end;
+    
+    start = clock();
 
     const char* img_dir = "";
     fp = openImg(img_dir, "frame.img");
@@ -290,6 +307,12 @@ wasm_restore_frame(WASMExecEnv **_exec_env)
     fclose(tsp_fp);
     
     _exec_env = &exec_env;
+    
+    end = clock();
+    printf("value stack, %f\n", restore_valstack_time);
+    printf("control stack, %f\n", restore_ctrlstack_time);
+    printf("frame stack, %f\n", restore_framestack_time);
+    printf("total frame stack, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
 
     return frame;
 }
@@ -457,11 +480,18 @@ int wasm_restore(WASMModuleInstance **module,
             bool *done_flag)
 {
     // restore memory
+    time_t start, end;
+    start = clock();
     wasm_restore_memory(*module, memory);
+    end = clock();
+    printf("memory, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
     printf("Success to restore linear memory\n");
 
     // restore globals
+    start = clock();
     wasm_restore_global(*module, *globals, global_data, global_addr);
+    end = clock();
+    printf("global, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
     printf("Success to restore globals\n");
 
     // restore addrs
