@@ -911,6 +911,6 @@ int wasm_dump(WASMExecEnv *exec_env,
 
     LOG_VERBOSE("Success to dump img for wamr\n");
     tend = clock();
-    printf("total, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
+    printf("total, %f\n", (double)(tend-tstart)/CLOCKS_PER_SEC*1000.0);
     return 0;
 }
