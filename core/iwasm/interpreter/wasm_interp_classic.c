@@ -1322,6 +1322,8 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
     signal(SIGINT, &wasm_interp_sigint);
 
     if (get_restore_flag()) {
+        time_t start, end;
+        start = clock();
         // bool done_flag;
         int rc;
         frame = wasm_restore_frame(&exec_env);
@@ -1359,6 +1361,9 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
             perror("failed to restore_tsp\n");
             return;
         }
+        end = clock();
+        printf("frame stack, %f\n", get_restore_framestack_time() / 1000.0);
+        printf("total, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
 
         UPDATE_ALL_FROM_FRAME();
         FETCH_OPCODE_AND_DISPATCH();

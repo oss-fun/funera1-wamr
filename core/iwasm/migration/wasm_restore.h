@@ -4,6 +4,8 @@
 #include "../common/wasm_exec_env.h"
 #include "../interpreter/wasm_interp.h"
 
+double get_restore_framestack_time();
+
 void set_restore_flag(bool f);
 bool get_restore_flag();
 

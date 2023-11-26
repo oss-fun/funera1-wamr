@@ -10,6 +10,10 @@
 static bool restore_flag;
 double restore_framestack_time, restore_valstack_time, restore_ctrlstack_time;
 
+double get_restore_framestack_time() {
+    return restore_framestack_time;
+}
+
 void set_restore_flag(bool f)
 {
     restore_flag = f;
@@ -83,8 +87,6 @@ restore_WASMInterpFrame(WASMInterpFrame *frame, WASMExecEnv *exec_env, FILE *fps
     FILE *tsp_fp = fps[2];
     time_t start, end;
 
-    start = clock();
-
     // struct WASMInterpFrame *prev_frame;
     // struct WASMFunctionInstance *function;
     // uint8 *ip;
@@ -122,9 +124,6 @@ restore_WASMInterpFrame(WASMInterpFrame *frame, WASMExecEnv *exec_env, FILE *fps
     uint32 tsp_offset;
     fread(&tsp_offset, sizeof(uint32), 1, tsp_fp);
     frame->tsp = frame->tsp_bottom + tsp_offset;
-
-    end = clock();
-    restore_framestack_time += (double)(end-start) / CLOCKS_PER_SEC * 1000.0;
     // =========================================================
 
     start = clock();
@@ -171,7 +170,7 @@ restore_WASMInterpFrame(WASMInterpFrame *frame, WASMExecEnv *exec_env, FILE *fps
 
     fread(frame->sp_bottom, sizeof(uint32), sp_offset, fp);
     end = clock();
-    restore_valstack_time += (double)(end-start) / CLOCKS_PER_SEC * 1000.0;
+    restore_valstack_time += (double)(end-start) / CLOCKS_PER_SEC * 1000.0 * 1000.0;
 
     fread(frame->tsp_bottom, sizeof(uint32), tsp_offset, tsp_fp);
 
@@ -223,7 +222,7 @@ restore_WASMInterpFrame(WASMInterpFrame *frame, WASMExecEnv *exec_env, FILE *fps
         fread(&csp->count, sizeof(uint32), 1, fp2);
     }
     end = clock();
-    restore_ctrlstack_time += (double)(end-start) / CLOCKS_PER_SEC * 1000.0;
+    restore_ctrlstack_time += (double)(end-start) / CLOCKS_PER_SEC * 1000.0 * 1000.0;
 }
 
 WASMInterpFrame*
@@ -309,10 +308,12 @@ wasm_restore_frame(WASMExecEnv **_exec_env)
     _exec_env = &exec_env;
     
     end = clock();
-    printf("value stack, %f\n", restore_valstack_time);
-    printf("control stack, %f\n", restore_ctrlstack_time);
-    printf("frame stack, %f\n", restore_framestack_time);
-    printf("total frame stack, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
+    printf("value stack, %f\n", restore_valstack_time/1000.0);
+    printf("control stack, %f\n", restore_ctrlstack_time/1000.0);
+    // printf("frame stack, %f\n", restore_framestack_time);
+    // printf("total frame stack, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
+    restore_framestack_time = (double)(end-start)/CLOCKS_PER_SEC*1000.0*1000.0;
+    restore_framestack_time -= (restore_valstack_time + restore_ctrlstack_time);
 
     return frame;
 }
@@ -445,6 +446,8 @@ int wasm_restore_addrs(
 
 int wasm_restore_tsp_addr(uint32 **frame_tsp, const WASMInterpFrame *frame)
 {
+    time_t start, end;
+    start = clock();
     const char *file = "tsp_addr.img";
     FILE* fp = openImg("", file);
     if (fp == NULL) {
@@ -457,6 +460,8 @@ int wasm_restore_tsp_addr(uint32 **frame_tsp, const WASMInterpFrame *frame)
     *frame_tsp = frame->tsp_bottom + p_offset;
 
     fclose(fp);
+    end = clock();
+    restore_framestack_time += (double)(end - start) / CLOCKS_PER_SEC * 1000.0 * 1000.0;
     return 0;
 }
 
@@ -485,20 +490,23 @@ int wasm_restore(WASMModuleInstance **module,
     wasm_restore_memory(*module, memory);
     end = clock();
     printf("memory, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
-    printf("Success to restore linear memory\n");
+    // printf("Success to restore linear memory\n");
 
     // restore globals
     start = clock();
     wasm_restore_global(*module, *globals, global_data, global_addr);
     end = clock();
     printf("global, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
-    printf("Success to restore globals\n");
+    // printf("Success to restore globals\n");
 
     // restore addrs
+    start = clock();
     wasm_restore_addrs(*frame, *cur_func, *memory,
                         frame_ip, frame_lp, frame_sp, frame_csp,
                         frame_ip_end, else_addr, end_addr, maddr, done_flag);
-    printf("Success to restore addrs\n");
+    end = clock();
+    restore_framestack_time += (end-start) / CLOCKS_PER_SEC * 1000.0 * 1000.0;
+    // printf("Success to restore addrs\n");
 
     return 0;
 }
