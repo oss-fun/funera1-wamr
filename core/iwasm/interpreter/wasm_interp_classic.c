@@ -1324,6 +1324,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
     if (get_restore_flag()) {
         time_t start, end;
         start = clock();
+        printf("boot end, %f\n", (double)(start)/CLOCKS_PER_SEC*1000.0);
         // bool done_flag;
         int rc;
         frame = wasm_restore_frame(&exec_env);

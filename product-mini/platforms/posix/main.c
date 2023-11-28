@@ -540,6 +540,10 @@ timeout_thread(void *vp)
 int
 main(int argc, char *argv[])
 {
+    time_t start;
+    start = clock();
+    printf("boot start, %f\n", (double)(start)/CLOCKS_PER_SEC*1000.0);
+
     int32 ret = -1;
     char *wasm_file = NULL;
     const char *func_name = NULL;
