@@ -540,9 +540,11 @@ timeout_thread(void *vp)
 int
 main(int argc, char *argv[])
 {
-    time_t start;
-    start = clock();
-    printf("boot start, %f\n", (double)(start)/CLOCKS_PER_SEC*1000.0);
+    // time_t start;
+    // start = clock();
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    printf("boot start, %ld\n", ts.tv_nsec);
 
     int32 ret = -1;
     char *wasm_file = NULL;

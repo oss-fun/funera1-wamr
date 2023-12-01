@@ -483,46 +483,55 @@ int wasm_dump_for_wasmedge(
     bool done_flag) 
 {
     int rc;  
-    time_t start, end;
+    // time_t start, end;
+    struct timespec ts1, ts2;
     
-    start = clock();
+    // start = clock();
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
     rc = wasm_dump_global_for_wasmedge(module, globals, global_data);
     if (rc < 0) {
         LOG_ERROR("Failed to dump globals for wasmedge\n");
         return rc;
     }
-    end = clock();
-    printf("wasmedge global, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
+    // end = clock();
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    printf("wasmedge global, %ld\n", ts2.tv_nsec - ts1.tv_nsec);
     
-    start = clock();
+    // start = clock();
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
     rc = wasm_dump_program_counter_for_wasmedge(exec_env->module_inst, cur_func, frame_ip);
     if (rc < 0) {
         LOG_ERROR("Failed to dump program counter for wasmedge\n");
         return rc;
     }
-    end = clock();
-    printf("wasmedge program counter, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
+    // end = clock();
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    printf("wasmedge program counter, %ld\n", ts2.tv_nsec - ts1.tv_nsec);
 
     // debug
     // debug_frame_info(exec_env, frame);
 
-    start = clock();
+    // start = clock();
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
     rc = wasm_dump_frame_for_wasmedge(exec_env->module_inst, frame);
     if (rc < 0) {
         LOG_ERROR("Failed to dump frame for wasmedge\n");
         return rc;
     }
-    end = clock();
-    printf("wasmedge frame stack, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
+    // end = clock();
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    printf("wasmedge frame stack, %ld\n", ts2.tv_nsec - ts1.tv_nsec);
 
-    start = clock();
+    // start = clock();
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
     rc = wasm_dump_stack_for_wasmedge(frame);
     if (rc < 0) {
         LOG_ERROR("Failed to dump stack for wasmedge\n");
         return rc;
     }
-    end = clock();
-    printf("wasmedge value stack, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
+    // end = clock();
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    printf("wasmedge value stack, %ld\n", ts2.tv_nsec - ts1.tv_nsec);
     
     LOG_VERBOSE("Success to dump img for wasmedge\n");
     return 0;
@@ -848,9 +857,9 @@ int wasm_dump(WASMExecEnv *exec_env,
          bool done_flag)
 {
     int rc;
-    time_t start, end;
-    time_t tstart, tend;
-    tstart = clock();
+    struct timespec ts1, ts2, t_ts1, t_ts2;
+    // tstart = clock();
+    clock_gettime(CLOCK_MONOTONIC, &t_ts1);
 
     rc = wasm_dump_for_wasmedge(
         exec_env, module, memory,
@@ -864,27 +873,33 @@ int wasm_dump(WASMExecEnv *exec_env,
     }
 
     // dump linear memory
-    start = clock();
+    // start = clock();
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
     rc = wasm_dump_memory(memory);
     if (rc < 0) {
         LOG_ERROR("Failed to dump linear memory\n");
         return rc;
     }
-    end = clock();
-    printf("unifie memory, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
+    // end = clock();
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    printf("unified memory, %ld\n", ts2.tv_nsec - ts1.tv_nsec);
 
     // dump globals
-    start = clock();
+    // start = clock();
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
     rc = wasm_dump_global(module, globals, global_data);
     if (rc < 0) {
         LOG_ERROR("Failed to dump globals\n");
         return rc;
     }
-    end = clock();
-    printf("wamr global, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
+    // end = clock();
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    // printf("wamr global, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
+    printf("wamr global, %ld\n", ts2.tv_nsec - ts1.tv_nsec);
 
     // dump frame
-    start = clock();
+    // start = clock();
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
     rc = wasm_dump_frame(exec_env, frame);
     if (rc < 0) {
         LOG_ERROR("Failed to dump frame\n");
@@ -906,11 +921,15 @@ int wasm_dump(WASMExecEnv *exec_env,
         LOG_ERROR("Failed to dump addrs\n");
         return rc;
     }
-    end = clock();
-    printf("wamr frame stack, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
+    // end = clock();
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    // printf("wamr frame stack, %f\n", (double)(end-start)/CLOCKS_PER_SEC*1000.0);
+    printf("wamr frame stack, %d\n", ts2.tv_nsec - ts1.tv_nsec);
 
     LOG_VERBOSE("Success to dump img for wamr\n");
-    tend = clock();
-    printf("total, %f\n", (double)(tend-tstart)/CLOCKS_PER_SEC*1000.0);
+    // tend = clock();
+    clock_gettime(CLOCK_MONOTONIC, &t_ts2);
+    // printf("total, %f\n", (double)(tend-tstart)/CLOCKS_PER_SEC*1000.0);
+    printf("total, %ld\n", t_ts2.tv_nsec - t_ts1.tv_nsec);
     return 0;
 }
