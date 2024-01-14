@@ -17,7 +17,7 @@ get_global_addr_for_migration(uint8 *global_data, WASMGlobalInstance *global)
 #endif
 }
 
-static uint64
+static uint32
 get_addr_offset(void* target, void* base)
 {
     if (target == NULL) return -1;

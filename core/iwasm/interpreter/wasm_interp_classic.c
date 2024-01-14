@@ -344,7 +344,8 @@ read_leb(const uint8 *buf, uint32 *p_offset, uint32 maxbits, bool sign)
         *(int32 *)frame_tsp++ = (int32)(2);\
     } while (0)
 
-#define PUSH_CSP(_label_type, param_cell_num, pram_count, cell_num, ret_count, _target_addr) \
+
+#define PUSH_CSP(_label_type, param_cell_num, param_count, cell_num, ret_count, _target_addr) \
     do {                                                              \
         bh_assert(frame_csp < frame->csp_boundary);                   \
         /* frame_csp->label_type = _label_type; */                    \
@@ -1359,6 +1360,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
             perror("failed to restore\n");
             return;
         }
+        frame->ip = frame_ip;
         linear_mem_size = memory ? memory->memory_data_size : 0;
 
         frame_lp = frame->lp;
@@ -4441,8 +4443,6 @@ wasm_interp_call_wasm(WASMModuleInstance *module_inst, WASMExecEnv *exec_env,
         return;
 
     // wasm_dump's function
-    set_all_cell_num_of_dummy_frame(all_cell_num);
-
     outs_area = wasm_exec_env_wasm_stack_top(exec_env);
     frame->function = NULL;
     frame->ip = NULL;

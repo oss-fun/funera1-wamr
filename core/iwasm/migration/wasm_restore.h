@@ -8,9 +8,6 @@ void set_restore_flag(bool f);
 bool get_restore_flag();
 
 WASMInterpFrame*
-wasm_restore_frame(WASMExecEnv **exec_env);
-
-WASMInterpFrame*
 wasm_restore_stack(WASMExecEnv **exec_env);
 
 static inline void
@@ -45,6 +42,4 @@ int wasm_restore(WASMModuleInstance **module,
             uint8 **end_addr,
             uint8 **maddr,
             bool *done_flag);
-
-int wasm_restore_tsp_addr(uint32 **frame_tsp, const WASMInterpFrame *frame);
 #endif // _WASM_RESTORE_H
