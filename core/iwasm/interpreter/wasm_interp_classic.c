@@ -988,16 +988,17 @@ wasm_interp_call_func_native(WASMModuleInstance *module_inst,
     if (cur_func->ret_cell_num == 1) {
         prev_frame->sp[0] = argv_ret[0];
         prev_frame->sp++;
-        prev_frame->tsp[0] = 0;
+
+        prev_frame->tsp[0] = 1;
         prev_frame->tsp++;
     }
     else if (cur_func->ret_cell_num == 2) {
         prev_frame->sp[0] = argv_ret[0];
         prev_frame->sp[1] = argv_ret[1];
         prev_frame->sp += 2;
-        prev_frame->tsp[0] = 0;
-        prev_frame->tsp[1] = 0;
-        prev_frame->tsp += 2;
+
+        prev_frame->tsp[0] = 2;
+        prev_frame->tsp++;
     }
 
     FREE_FRAME(exec_env, frame);
@@ -1255,6 +1256,17 @@ get_global_addr(uint8 *global_data, WASMGlobalInstance *global)
 #endif
 }
 
+static void clear_refs() {
+    int fd;
+    char *v = "4";
+
+    fd = open("/proc/self/clear_refs", O_WRONLY);
+    if (write(fd, v, 3) < 3) {
+        perror("Can't clear soft-dirty bit");
+    }
+    close(fd);
+}
+
 static bool sig_flag = false;
 static void (*native_handler)(void) = NULL;
 bool done_flag = false;
@@ -1328,8 +1340,11 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
 #endif
 
     signal(SIGINT, &wasm_interp_sigint);
+    // Clear soft-dirty bit
+    clear_refs();
 
     if (get_restore_flag()) {
+        printf("[DEBUG]restore\n");
         // bool done_flag;
         int rc;
 
@@ -1365,6 +1380,12 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
 
         frame_lp = frame->lp;
         UPDATE_ALL_FROM_FRAME();
+
+        rc = wasm_dump(exec_env, module, memory, 
+            globals, global_data, global_addr, cur_func,
+            frame, frame_ip, frame_sp, frame_csp, frame_tsp,
+            frame_ip_end, else_addr, end_addr, maddr, done_flag);
+
         FETCH_OPCODE_AND_DISPATCH();
     }
 
