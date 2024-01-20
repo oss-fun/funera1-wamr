@@ -284,6 +284,23 @@ wasm_restore_stack(WASMExecEnv **_exec_env)
     return frame;
 }
 
+void restore_dirty_memory(WASMMemoryInstance **memory, FILE* memory_fp) {
+    const int PAGE_SIZE = 4096;
+    while (!feof(memory_fp)) {
+        if (feof(memory_fp)) break;
+        uint32 offset;
+        uint32 len;
+        len = fread(&offset, sizeof(uint32), 1, memory_fp);
+        if (len == 0) break;
+        // printf("len: %d\n", len);
+        // printf("i: %d\n", offset);
+
+        uint8* addr = (*memory)->memory_data + offset;
+        len = fread(addr, PAGE_SIZE, 1, memory_fp);
+        // printf("PAGESIZE: %d\n", len);
+    }
+}
+
 int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory, uint8** maddr) {
     FILE* memory_fp = open_image("memory.img", "rb");
     FILE* mem_size_fp = open_image("mem_page_count.img", "rb");
@@ -294,9 +311,10 @@ int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory,
     wasm_enlarge_memory(module, page_count- (*memory)->cur_page_count);
     *maddr = page_count * (*memory)->num_bytes_per_page;
 
+    restore_dirty_memory(memory, memory_fp);
     // restore memory_data
-    fread((*memory)->memory_data, sizeof(uint8),
-            (*memory)->num_bytes_per_page * (*memory)->cur_page_count, memory_fp);
+    // fread((*memory)->memory_data, sizeof(uint8),
+    //         (*memory)->num_bytes_per_page * (*memory)->cur_page_count, memory_fp);
 
     fclose(memory_fp);
     fclose(mem_size_fp);

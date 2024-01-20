@@ -1159,6 +1159,17 @@ get_global_addr(uint8 *global_data, WASMGlobalInstance *global)
 #endif
 }
 
+static void clear_refs() {
+    int fd;
+    char *v = "4";
+
+    fd = open("/proc/self/clear_refs", O_WRONLY);
+    if (write(fd, v, 3) < 3) {
+        perror("Can't clear soft-dirty bit");
+    }
+    close(fd);
+}
+
 static bool sig_flag = false;
 static void (*native_handler)(void) = NULL;
 bool done_flag = false;
@@ -1234,6 +1245,8 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
 #endif
 
     signal(SIGINT, &wasm_interp_sigint);
+    // Clear soft-dirty bit
+    clear_refs();
 
     if (get_restore_flag()) {
         // bool done_flag;

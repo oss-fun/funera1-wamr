@@ -284,11 +284,77 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
     return 0;
 }
 
-int wasm_dump_memory(WASMMemoryInstance *memory) {
+int is_dirty(uint64 pagemap_entry) {
+    return (pagemap_entry>>62&1) | (pagemap_entry>>63&1);
+}
+
+int is_soft_dirty(uint64 pagemap_entry) {
+    return (pagemap_entry >> 55 & 1);
+}
+
+int dump_dirty_memory(WASMMemoryInstance *memory) {
+    const int PAGEMAP_LENGTH = 8;
+    const int PAGE_SIZE = 4096;
     FILE *memory_fp = open_image("memory.img", "wb");
+    int fd;
+    uint64 pagemap_entry;
+    // プロセスのpagemapを開く
+    fd = open("/proc/self/pagemap", O_RDONLY);
+    if (fd == -1) {
+        perror("Error opening pagemap");
+        return -1;
+    }
+
+    // pfnに対応するpagemapエントリを取得
+    unsigned long pfn = (unsigned long)memory->memory_data / PAGE_SIZE;
+    off_t offset = sizeof(uint64) * pfn;
+    if (lseek(fd, offset, SEEK_SET) == -1) {
+        perror("Error seeking to pagemap entry");
+        close(fd);
+        return -1;
+    }
+
+    uint8* memory_data = memory->memory_data;
+    uint8* memory_data_end = memory->memory_data_end;
+    int i = 0;
+    for (uint8* addr = memory->memory_data; addr < memory_data_end; addr += PAGE_SIZE, ++i) {
+        unsigned long pfn = (unsigned long)addr / PAGE_SIZE;
+        off_t offset = sizeof(uint64) * pfn;
+        if (lseek(fd, offset, SEEK_SET) == -1) {
+            perror("Error seeking to pagemap entry");
+            close(fd);
+            return -1;
+        }
+
+        if (read(fd, &pagemap_entry, PAGEMAP_LENGTH) != PAGEMAP_LENGTH) {
+            perror("Error reading pagemap entry");
+            close(fd);
+            return -1;
+        }
+
+        // dirty pageのみdump
+        // if (is_dirty(pagemap_entry)) {
+        if (is_soft_dirty(pagemap_entry)) {
+            // printf("[%x, %x]: dirty page\n", i*PAGE_SIZE, (i+1)*PAGE_SIZE);
+            uint32 offset = (uint64)addr - (uint64)memory_data;
+            // printf("i: %d\n", offset);
+            fwrite(&offset, sizeof(uint32), 1, memory_fp);
+            fwrite(addr, PAGE_SIZE, 1, memory_fp);
+        }
+    }
+
+    close(fd);
+    fclose(memory_fp);
+    return 0;
+}
+
+int wasm_dump_memory(WASMMemoryInstance *memory) {
+    FILE *memory_fp = open_image("all_memory.img", "wb");
     FILE *mem_size_fp = open_image("mem_page_count.img", "wb");
 
-    // WASMMemoryInstance *memory = module->default_memory;
+    dump_dirty_memory(memory);
+
+    // デバッグのために、すべてのメモリも保存
     fwrite(memory->memory_data, sizeof(uint8),
            memory->num_bytes_per_page * memory->cur_page_count, memory_fp);
 
