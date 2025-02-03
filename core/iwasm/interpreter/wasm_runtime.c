@@ -319,6 +319,8 @@ memory_instantiate(WASMModuleInstance *module_inst, WASMModuleInstance *parent,
                       "allocate linear memory failed");
         return NULL;
     }
+    // espのリニアメモリを0初期化する
+    memset(memory->memory_data, 0, memory_data_size);
 
     memory->module_type = Wasm_Module_Bytecode;
     memory->num_bytes_per_page = num_bytes_per_page;
