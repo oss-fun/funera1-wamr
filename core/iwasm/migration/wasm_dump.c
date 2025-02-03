@@ -50,7 +50,7 @@ int debug_memories(WASMModuleInstance *module) {
 
 // 積まれてるframe stackを出力する
 void debug_frame_info(WASMExecEnv* exec_env, WASMInterpFrame *frame) {
-    WASMModuleInstance *module = exec_env->module_inst;
+    WASMModuleInstance *module = (WASMModuleInstance *)exec_env->module_inst;
 
     int cnt = 0;
     printf("=== DEBUG Frame Stack ===\n");
@@ -178,7 +178,7 @@ static void
 _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, FILE *fp, bool is_top)
 {
     int i;
-    WASMModuleInstance *module = exec_env->module_inst;
+    WASMModuleInstance *module = (WASMModuleInstance *)exec_env->module_inst;
 
     // Entry function
     // wasm_dump_stackの方でdump

@@ -41,15 +41,15 @@ wasm_alloc_frame(WASMExecEnv *exec_env, uint32 size, WASMInterpFrame *prev_frame
 static void
 _restore_stack(WASMExecEnv *exec_env, WASMInterpFrame *frame, FILE *fp)
 {
-    WASMModuleInstance *module_inst = exec_env->module_inst;
+    // WASMModuleInstance *module_inst = exec_env->module_inst;
     WASMFunctionInstance *func = frame->function;
     int read_size = 0;
 
     // 初期化
     frame->sp_bottom = frame->lp + func->param_cell_num + func->local_cell_num;
     frame->sp_boundary = frame->sp_bottom + func->u.func->max_stack_cell_num;
-    frame->csp_bottom = frame->sp_boundary;
-    frame->csp_boundary = frame->csp_bottom + func->u.func->max_block_num;
+    frame->csp_bottom = (WASMBranchBlock *)frame->sp_boundary;
+    frame->csp_boundary = (WASMBranchBlock *)(frame->csp_bottom + func->u.func->max_block_num);
     // frame->tsp_bottom = frame->csp_boundary;
     // frame->tsp_boundary = frame->tsp_bottom + func->u.func->max_stack_cell_num;
 
@@ -204,7 +204,7 @@ int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory,
     uint32 page_count;
     fread(&page_count, sizeof(uint32), 1, mem_size_fp);
     wasm_enlarge_memory(module, page_count- (*memory)->cur_page_count);
-    *maddr = page_count * (*memory)->num_bytes_per_page;
+    *maddr = (uint8 *)(page_count * (*memory)->num_bytes_per_page);
 
     restore_dirty_memory(memory, memory_fp);
     // restore memory_data
