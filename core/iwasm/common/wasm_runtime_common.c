@@ -2,7 +2,6 @@
  * Copyright (C) 2019 Intel Corporation.  All rights reserved.
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
-
 #include "bh_platform.h"
 #include "bh_common.h"
 #include "bh_assert.h"
@@ -11,6 +10,7 @@
 #include "wasm_runtime_common.h"
 #include "wasm_memory.h"
 #include "wasm_dump.h"
+#include "wasm_migration.h"
 #if WASM_ENABLE_INTERP != 0
 #include "../interpreter/wasm_runtime.h"
 #endif
@@ -2288,6 +2288,7 @@ wasm_runtime_call_wasm(WASMExecEnv *exec_env,
                        WASMFunctionInstanceCommon *function, uint32 argc,
                        uint32 argv[])
 {
+    //printf("=== Entering wasm_runtime_call_wasm ===\n");
     bool ret = false;
     uint32 *new_argv = NULL, param_argc;
 #if WASM_ENABLE_GC == 0 && WASM_ENABLE_REF_TYPES != 0
@@ -7390,7 +7391,8 @@ wasm_runtime_is_underlying_binary_freeable(WASMModuleCommon *const module)
 
     return true;
 }
-
+/*
 void wasm_runtime_checkpoint() {
     wasm_set_checkpoint(true);
 }
+*/
