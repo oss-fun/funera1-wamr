@@ -97,274 +97,69 @@ int get_pagemap(unsigned long memory_addr) {
 
 // wasm_dump.c
 uint8* get_type_stack(uint32 fidx, uint32 offset, uint32* type_stack_size, bool is_return_address) {
-   ESP_LOGI(TAG, "Getting type stack for fidx=%u, offset=%u", fidx, offset);
-  
-   char base_path[128];
-   char full_path[256];
-   struct dirent *entry;
-   FILE *tablemap_func = NULL;
-   FILE *tablemap_offset = NULL;
-   FILE *type_table = NULL;
-   uint8* type_stack = NULL;
-   uint8* locals = NULL;
-   uint8* stack = NULL;
+    FILE *tablemap_func = fopen("FUNC", "rb");
+    if (!tablemap_func) printf("not found tablemap_func\n");
+    FILE *tablemap_offset = fopen("OFFSET", "rb");
+    if (!tablemap_func) printf("not found tablemap_offset\n");
+    FILE *type_table = fopen("TYPE", "rb");
+    if (!tablemap_func) printf("not found type_table\n");
 
-   snprintf(base_path, sizeof(base_path), "%s/%s", MOUNT_POINT, CHECKPOINT_DIR);
+    /// tablemap_func
+    fseek(tablemap_func, fidx*sizeof(uint32)*3, SEEK_SET);
+    uint32 ffidx;
+    uint64 tablemap_offset_addr;
+    fread(&ffidx, sizeof(uint32), 1, tablemap_func);
+    if (fidx != ffidx) {
+        perror("tablemap_funcがおかしい\n");
+        exit(1);
+    }
+    fread(&tablemap_offset_addr, sizeof(uint64), 1, tablemap_func);
 
-   DIR *dir = opendir(base_path);
-   if (!dir) {
-       ESP_LOGE(TAG, "Cannot open directory: %s", base_path);
-       return NULL;
-   }
+    /// tablemap_offset
+    fseek(tablemap_offset, tablemap_offset_addr, SEEK_SET);
+    // 関数fidxのローカルを取得
+    uint32 locals_size;
+    fread(&locals_size, sizeof(uint32), 1, tablemap_offset);
+    uint8 locals[locals_size];
+    fread(locals, sizeof(uint8), locals_size, tablemap_offset);
+    // 対応するoffsetまで移動
+    uint32 ooffset;
+    uint64 type_table_addr, pre_type_table_addr;
+    while(!feof(tablemap_offset)) {
+       fread(&ooffset, sizeof(uint32), 1, tablemap_offset); 
+       fread(&type_table_addr, sizeof(uint64), 1, tablemap_offset); 
+       if (offset == ooffset) break;
+       pre_type_table_addr = type_table_addr;
+    }
+    if (feof(tablemap_offset)) {
+        perror("tablemap_offsetがおかしい\n");
+        exit(1);
+    }
+    // type_table_addr = pre_type_table_addr;
 
-   bool found_func = false;
-   bool found_offset = false;
-   bool found_type = false;
+    /// type_table
+    fseek(type_table, type_table_addr, SEEK_SET);
+    uint32 stack_size;
+    fread(&stack_size, sizeof(uint32), 1, type_table);
+    uint8 stack[stack_size];
+    fread(stack, sizeof(uint8), stack_size, type_table);
 
-   while ((entry = readdir(dir)) != NULL) {
-       ESP_LOGI(TAG, "Found file: %s", entry->d_name);
-       if (entry->d_name[0] == '.' || entry->d_name[0] == '_') continue;
-       if (strcasecmp(entry->d_name, "FUNC") == 0) found_func = true;
-       if (strcasecmp(entry->d_name, "OFFSET") == 0) found_offset = true;
-       if (strcasecmp(entry->d_name, "TYPE") == 0) found_type = true;
-   }
-   closedir(dir);
+    if (is_return_address) {
+        fread(&stack_size, sizeof(uint32), 1, type_table);
+        fread(stack, sizeof(uint8), stack_size, type_table);
+    }
 
-   if (!found_func || !found_offset || !found_type) {
-       ESP_LOGE(TAG, "Required files not found: FUNC=%d, OFFSET=%d, TYPE=%d", 
-               found_func, found_offset, found_type);
-       return NULL;
-   }
+    // uint8 type_stack[locals_size + stack_size];
+    uint8* type_stack = malloc(locals_size + stack_size);
+    for (uint32 i = 0; i < locals_size; ++i) type_stack[i] = locals[i];
+    for (uint32 i = 0; i < stack_size; ++i) type_stack[locals_size + i] = stack[i];
 
-   // Open FUNC file
-   snprintf(full_path, sizeof(full_path), "%s/FUNC", base_path);
-   tablemap_func = fopen(full_path, "rb");
-   if (!tablemap_func) {
-       ESP_LOGE(TAG, "Failed to open FUNC file: %s", full_path);
-       return NULL;
-   }
+    fclose(tablemap_func);
+    fclose(tablemap_offset);
+    fclose(type_table);
 
-   // Open OFFSET file
-   snprintf(full_path, sizeof(full_path), "%s/OFFSET", base_path);
-   tablemap_offset = fopen(full_path, "rb");
-   if (!tablemap_offset) {
-       ESP_LOGE(TAG, "Failed to open OFFSET file: %s", full_path);
-       fclose(tablemap_func);
-       return NULL;
-   }
-
-   // Open TYPE file
-   snprintf(full_path, sizeof(full_path), "%s/TYPE", base_path);
-   type_table = fopen(full_path, "rb");
-   if (!type_table) {
-       ESP_LOGE(TAG, "Failed to open TYPE file: %s", full_path);
-       fclose(tablemap_func);
-       fclose(tablemap_offset);
-       return NULL;
-   }
-
-   // Get file sizes
-   fseek(tablemap_func, 0, SEEK_END);
-   long func_size = ftell(tablemap_func);
-   fseek(tablemap_offset, 0, SEEK_END);
-   long offset_size = ftell(tablemap_offset);
-   fseek(type_table, 0, SEEK_END);
-   long type_size = ftell(type_table);
-
-   ESP_LOGI(TAG, "File sizes - FUNC: %ld, OFFSET: %ld, TYPE: %ld", 
-            func_size, offset_size, type_size);
-
-   // Reset file positions
-   fseek(tablemap_func, 0, SEEK_SET);
-   fseek(tablemap_offset, 0, SEEK_SET);
-   fseek(type_table, 0, SEEK_SET);
-
-   // Read from FUNC file
-   const size_t FUNC_ENTRY_SIZE = sizeof(uint32) * 3;
-   long func_seek_pos = fidx * FUNC_ENTRY_SIZE;
-   uint32 ffidx;
-   uint64 tablemap_offset_addr;
-
-   if (func_seek_pos + FUNC_ENTRY_SIZE > func_size) {
-       ESP_LOGE(TAG, "FUNC file seek position out of bounds: %ld > %ld", 
-               func_seek_pos + FUNC_ENTRY_SIZE, func_size);
-       goto error;
-   }
-
-   if (fseek(tablemap_func, func_seek_pos, SEEK_SET) != 0) {
-       ESP_LOGE(TAG, "Failed to seek in FUNC file");
-       goto error;
-   }
-
-   if (fread(&ffidx, sizeof(uint32), 1, tablemap_func) != 1) {
-       ESP_LOGE(TAG, "Failed to read function index");
-       goto error;
-   }
-
-   if (fidx != ffidx) {
-       ESP_LOGE(TAG, "Function index mismatch: expected %u, got %u", fidx, ffidx);
-       goto error;
-   }
-
-   if (fread(&tablemap_offset_addr, sizeof(uint64), 1, tablemap_func) != 1) {
-       ESP_LOGE(TAG, "Failed to read offset address");
-       goto error;
-   }
-
-   ESP_LOGI(TAG, "FUNC read: fidx=%u, offset_addr=0x%llx", ffidx, tablemap_offset_addr);
-
-   // Read from OFFSET file
-   const size_t ENTRY_SIZE = sizeof(uint32) + sizeof(uint64);
-
-   if (tablemap_offset_addr >= offset_size) {
-       ESP_LOGE(TAG, "Invalid offset address: 0x%llx >= %ld", tablemap_offset_addr, offset_size);
-       goto error;
-   }
-
-   if (fseek(tablemap_offset, tablemap_offset_addr, SEEK_SET) != 0) {
-       ESP_LOGE(TAG, "Failed to seek in OFFSET file");
-       goto error;
-   }
-
-   // Read locals size and data
-   uint32 locals_size;
-   if (fread(&locals_size, sizeof(uint32), 1, tablemap_offset) != 1) {
-       ESP_LOGE(TAG, "Failed to read locals size");
-       goto error;
-   }
-
-   ESP_LOGI(TAG, "Locals size: %u", locals_size);
-
-   locals = (uint8*)malloc(locals_size);
-   if (!locals || locals_size == 0) {
-       ESP_LOGE(TAG, "Failed to allocate locals buffer or invalid size");
-       goto error;
-   }
-
-   if (fread(locals, 1, locals_size, tablemap_offset) != locals_size) {
-       ESP_LOGE(TAG, "Failed to read locals data");
-       goto error;
-   }
-
-   // Get current position for offset entries
-   long entry_start_pos = ftell(tablemap_offset);
-   size_t available_entries = (offset_size - entry_start_pos) / ENTRY_SIZE;
-
-   ESP_LOGI(TAG, "Starting offset search at pos %ld, available entries: %zu", 
-            entry_start_pos, available_entries);
-
-   // Read offset entries
-   uint32 current_offset;
-   uint64 type_table_addr = 0;
-   bool found = false;
-
-   for (size_t i = 0; i < available_entries; i++) {
-       if (fread(&current_offset, sizeof(uint32), 1, tablemap_offset) != 1) {
-           ESP_LOGE(TAG, "Failed to read offset at entry %zu", i);
-           break;
-       }
-
-       if (fread(&type_table_addr, sizeof(uint64), 1, tablemap_offset) != 1) {
-           ESP_LOGE(TAG, "Failed to read address at entry %zu", i);
-           break;
-       }
-
-       if (current_offset == offset) {
-           found = true;
-           ESP_LOGI(TAG, "Found matching offset at entry %zu: offset=%u, addr=0x%llx", 
-                    i, current_offset, type_table_addr);
-           break;
-       }
-   }
-
-   if (!found) {
-       ESP_LOGE(TAG, "Target offset %u not found", offset);
-       goto error;
-   }
-
-   // Read from TYPE file using found address
-   if (type_table_addr >= type_size) {
-       ESP_LOGE(TAG, "Invalid type table address: 0x%llx >= %ld", type_table_addr, type_size);
-       goto error;
-   }
-
-   if (fseek(type_table, type_table_addr, SEEK_SET) != 0) {
-       ESP_LOGE(TAG, "Failed to seek in TYPE file");
-       goto error;
-   }
-
-   uint32 stack_size;
-   if (fread(&stack_size, sizeof(uint32), 1, type_table) != 1 || stack_size == 0) {
-       ESP_LOGE(TAG, "Failed to read valid stack size");
-       goto error;
-   }
-
-   ESP_LOGI(TAG, "Stack size: %u", stack_size);
-
-   stack = (uint8*)malloc(stack_size);
-   if (!stack) {
-       ESP_LOGE(TAG, "Failed to allocate stack buffer");
-       goto error;
-   }
-
-   if (fread(stack, 1, stack_size, type_table) != stack_size) {
-       ESP_LOGE(TAG, "Failed to read stack data");
-       goto error;
-   }
-
-   if (is_return_address) {
-       uint32 new_stack_size;
-       if (fread(&new_stack_size, sizeof(uint32), 1, type_table) != 1 || new_stack_size == 0) {
-           ESP_LOGE(TAG, "Failed to read valid new stack size");
-           goto error;
-       }
-
-       uint8* temp_stack = (uint8*)malloc(new_stack_size);
-       if (!temp_stack) {
-           ESP_LOGE(TAG, "Failed to allocate new stack buffer");
-           goto error;
-       }
-
-       if (fread(temp_stack, 1, new_stack_size, type_table) != new_stack_size) {
-           ESP_LOGE(TAG, "Failed to read new stack data");
-           free(temp_stack);
-           goto error;
-       }
-
-       free(stack);
-       stack = temp_stack;
-       stack_size = new_stack_size;
-   }
-
-   // Build final type stack
-   type_stack = (uint8*)malloc(locals_size + stack_size);
-   if (!type_stack) {
-       ESP_LOGE(TAG, "Failed to allocate type stack buffer");
-       goto error;
-   }
-
-   memcpy(type_stack, locals, locals_size);
-   memcpy(type_stack + locals_size, stack, stack_size);
-   *type_stack_size = locals_size + stack_size;
-
-   ESP_LOGI(TAG, "Successfully built type stack: locals=%u, stack=%u, total=%u", 
-            locals_size, stack_size, *type_stack_size);
-
-   free(locals);
-   free(stack);
-   fclose(tablemap_func);
-   fclose(tablemap_offset);
-   fclose(type_table);
-   return type_stack;
-
-error:
-   if (locals) free(locals);
-   if (stack) free(stack);
-   if (type_stack) free(type_stack);
-   if (tablemap_func) fclose(tablemap_func);
-   if (tablemap_offset) fclose(tablemap_offset);
-   if (type_table) fclose(type_table);
-   return NULL;
+    *type_stack_size = locals_size + stack_size;
+    return type_stack;
 }
 
 int check_soft_dirty(int fd, uint8* addr) {
@@ -638,20 +433,15 @@ static void _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, FI
 
     uint32 ret_fidx = 0;
     uint32 ret_offset = 0;
-    
-    if (frame->prev_frame && frame->prev_frame->function) {
-        ret_fidx = frame->prev_frame->function - module->e->functions;
-        ret_offset = frame->prev_frame->ip - wasm_get_func_code(frame->prev_frame->function);
-    } else {
-        ret_fidx = curr_fidx;
-        ret_offset = frame->ip - wasm_get_func_code(frame->function);
-    }
+
+    ret_fidx = curr_fidx;
+    ret_offset = frame->ip - wasm_get_func_code(frame->function);
 
     if (fwrite(&ret_fidx, sizeof(uint32), 1, fp) != 1) return;
     if (fwrite(&ret_offset, sizeof(uint32), 1, fp) != 1) return;
 
     uint32 type_stack_size = 0;
-    uint8* type_stack = get_type_stack(curr_fidx, ret_offset, &type_stack_size, !is_top);
+    uint8* type_stack = get_type_stack(ret_fidx, ret_offset, &type_stack_size, !is_top);
     
     if (!type_stack || type_stack_size == 0) {
         if (type_stack) free(type_stack);
