@@ -1,6 +1,8 @@
 #ifndef _WASM_MIGRATION_H
 #define _WASM_MIGRATION_H
 
+#define WASM_PAGE_SIZE 65536
+
 // #include "../common/wasm_exec_env.h"
 #include "../interpreter/wasm_interp.h"
 

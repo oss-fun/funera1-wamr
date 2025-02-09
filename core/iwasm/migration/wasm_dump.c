@@ -6,8 +6,11 @@
 #include "wasm_migration.h"
 #include "wasm_dump.h"
 #include "wasm_dispatch.h"
+#include "esp_log.h"
 
 #define BH_PLATFORM_LINUX 0
+
+static const char *TAG = "wasm-dump";
 
 // #define skip_leb(p) while (*p++ & 0x80)
 #define skip_leb(p)                     \
@@ -108,11 +111,11 @@ int get_opcode_offset(uint8 *ip, uint8 *ip_lim) {
 
 // TODO: コードごちゃごちゃで読めないので、整理する
 uint8* get_type_stack(uint32 fidx, uint32 offset, uint32* type_stack_size, bool is_return_address) {
-    FILE *tablemap_func = fopen("tablemap_func", "rb");
+    FILE *tablemap_func = fopen("FUNC", "rb");
     if (!tablemap_func) printf("not found tablemap_func\n");
-    FILE *tablemap_offset = fopen("tablemap_offset", "rb");
+    FILE *tablemap_offset = fopen("OFFSET", "rb");
     if (!tablemap_func) printf("not found tablemap_offset\n");
-    FILE *type_table = fopen("type_table", "rb");
+    FILE *type_table = fopen("TYPE", "rb");
     if (!tablemap_func) printf("not found type_table\n");
     
     /// tablemap_func
@@ -371,15 +374,37 @@ int dump_dirty_memory(WASMMemoryInstance *memory) {
 }
 
 int wasm_dump_memory(WASMMemoryInstance *memory) {
-    FILE *mem_size_fp = open_image("mem_page_count.img", "wb");
+    FILE *mem_size_fp = open_image("memcount.img", "wb");
+    if (!mem_size_fp) {
+        ESP_LOGE(TAG, "Failed to open memcount.img");
+        return -1;
+    }
 
-    dump_dirty_memory(memory);
-
-
-    printf("page_count: %d\n", memory->cur_page_count);
-    fwrite(&(memory->cur_page_count), sizeof(uint32), 1, mem_size_fp);
-
+    // cur_pageをdump
+    if (fwrite(&(memory->cur_page_count), sizeof(uint32), 1, mem_size_fp) != 1) {
+        ESP_LOGE(TAG, "Failed to write memory page count");
+        fclose(mem_size_fp);
+        return -1;
+    }
     fclose(mem_size_fp);
+
+    // dump_dirty_memory(memory);
+
+    // memoryを全部吐く(ただし、cur_page分)
+    FILE *mem_fp = fopen("/memory.img", "wb");
+    if (!mem_fp) {
+        ESP_LOGE(TAG, "Failed to open memory.img");
+        return -1;
+    }
+    
+    int write_memory_size = WASM_PAGE_SIZE * memory->cur_page_count;
+    int ret = fwrite(memory->memory_data, sizeof(uint8), write_memory_size, mem_fp);
+    if (ret != write_memory_size) {
+        ESP_LOGE(TAG, "Failed to write memory");
+        fclose(mem_fp);
+        return -1;
+    }
+    fclose(mem_fp);
 
     // デバッグのために、すべてのメモリも保存
     // FILE *all_memory_fp = open_image("all_memory.img", "wb");
@@ -429,7 +454,7 @@ int wasm_dump_program_counter(
 )
 {
     FILE *fp;
-    const char *file = "program_counter.img";
+    const char *file = "program.img";
     fp = fopen(file, "wb");
     if (fp == NULL) {
         fprintf(stderr, "failed to open %s\n", file);

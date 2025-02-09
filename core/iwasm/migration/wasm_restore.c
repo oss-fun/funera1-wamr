@@ -198,7 +198,7 @@ void restore_dirty_memory(WASMMemoryInstance **memory, FILE* memory_fp) {
 
 int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory, uint8** maddr) {
     FILE* memory_fp = open_image("memory.img", "rb");
-    FILE* mem_size_fp = open_image("mem_page_count.img", "rb");
+    FILE* mem_size_fp = open_image("memcount.img", "rb");
 
     // restore page_count
     uint32 page_count;
@@ -246,7 +246,7 @@ int wasm_restore_program_counter(
     WASMModuleInstance *module,
     uint8 **frame_ip)
 {
-    FILE* fp = open_image("program_counter.img", "rb");
+    FILE* fp = open_image("program.img", "rb");
 
     uint32 fidx, offset;
     fread(&fidx, sizeof(uint32), 1, fp);

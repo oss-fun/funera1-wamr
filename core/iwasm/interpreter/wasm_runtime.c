@@ -330,6 +330,9 @@ memory_instantiate(WASMModuleInstance *module_inst, WASMModuleInstance *parent,
     memory->heap_data_end = memory->heap_data + heap_size;
     memory->memory_data_end = memory->memory_data + memory_data_size;
 
+    // espのリニアメモリを0初期化する
+    memset(memory->memory_data, 0, memory_data_size);
+
     /* Initialize heap */
     if (heap_size > 0) {
         uint32 heap_struct_size = mem_allocator_get_heap_struct_size();
