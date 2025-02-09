@@ -1421,8 +1421,29 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
         exit(0);                                                            \
     } while(0)                                                              
 
+
+int get_env_int(const char *env_var, int default_value) {
+    char *env_val = getenv(env_var);
+    if (!env_val) {
+        return default_value;  // 環境変数が未設定ならデフォルト値
+    }
+
+    char *endptr;
+    errno = 0;  // errno をリセット
+    long val = strtol(env_val, &endptr, 10);
+
+    // 変換エラー（未変換部分がある or 範囲外）
+    if (errno == ERANGE || val > INT_MAX || val < INT_MIN || *endptr != '\0') {
+        return default_value;
+    }
+
+    return (int)val;
+}
+static int dispatch_count = 0;
+int ckpt_point;
 #define CHECK_DUMP()                                                        \
-    if (wasm_get_checkpoint()) {                                            \
+    dispatch_count++;                                                       \
+    if (wasm_get_checkpoint() || dispatch_count == ckpt_point) {            \
         DO_CHECKPOINT();                                                    \
     }
 
@@ -1542,6 +1563,8 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
     uint32 local_idx, local_offset, global_idx;
     uint8 local_type, *global_addr;
     uint32 cache_index, type_index, param_cell_num, cell_num;
+    // TODO: option引数から設定できるようにする
+    ckpt_point = get_env_int("CKPT_POINT", INT32_MAX);
 #if WASM_ENABLE_EXCE_HANDLING != 0
     int32_t exception_tag_index;
 #endif
