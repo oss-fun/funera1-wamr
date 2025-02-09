@@ -85,7 +85,7 @@ int get_pagemap(unsigned long memory_addr) {
         return -1;
     }
 
-    unsigned long pfn = memory_addr / WASM_PAGE_SIZE;
+    unsigned long pfn = memory_addr / LINUX_PAGE_SIZE;
     off_t offset = sizeof(uint64) * pfn;
     if (lseek(fd, offset, SEEK_SET) == -1) {
         ESP_LOGE(TAG, "Error seeking to pagemap entry");
@@ -167,7 +167,7 @@ int check_soft_dirty(int fd, uint8* addr) {
     // Linuxの場合の実装（変更なし）
     const int PAGEMAP_LENGTH = 8;
     uint64 pagemap_entry;
-    unsigned long pfn = (unsigned long)addr / WASM_PAGE_SIZE;
+    unsigned long pfn = (unsigned long)addr / LINUX_PAGE_SIZE;
     off_t offset = sizeof(uint64) * pfn;
     
     if (lseek(fd, offset, SEEK_SET) == -1) {
@@ -232,12 +232,12 @@ int dump_dirty_memory(WASMMemoryInstance *memory) {
 
    size_t buffer_offset = 0;
 
-   for (uint8* addr = memory->memory_data; addr < memory_data_end; addr += WASM_PAGE_SIZE) {
+   for (uint8* addr = memory->memory_data; addr < memory_data_end; addr += LINUX_PAGE_SIZE) {
        if (check_soft_dirty(fd, addr)) {
            uint32 offset = (uint32)((uintptr_t)addr - (uintptr_t)memory_data);
 
            // バッファがいっぱいになった場合、書き込みを実行
-           if (buffer_offset + WASM_PAGE_SIZE + sizeof(uint32) > DUMP_PAGE_SIZE) {
+           if (buffer_offset + LINUX_PAGE_SIZE + sizeof(uint32) > DUMP_PAGE_SIZE) {
                size_t written = fwrite(dump_buffer, 1, buffer_offset, memory_fp);
                if (written != buffer_offset) {
                    ESP_LOGE(TAG, "Failed to write dump buffer: %zu/%zu bytes written",
@@ -251,8 +251,8 @@ int dump_dirty_memory(WASMMemoryInstance *memory) {
            // オフセットとデータをバッファにコピー
            memcpy(dump_buffer + buffer_offset, &offset, sizeof(uint32));
            buffer_offset += sizeof(uint32);
-           memcpy(dump_buffer + buffer_offset, addr, WASM_PAGE_SIZE);
-           buffer_offset += WASM_PAGE_SIZE;
+           memcpy(dump_buffer + buffer_offset, addr, LINUX_PAGE_SIZE);
+           buffer_offset += LINUX_PAGE_SIZE;
 
            pages_written++;
 
@@ -326,11 +326,27 @@ int wasm_dump_memory(WASMMemoryInstance *memory) {
     }
     fclose(mem_size_fp);
 
-    int ret = dump_dirty_memory(memory);
-    if (ret < 0) {
-        ESP_LOGE(TAG, "Failed to dump dirty memory pages");
-        return ret;
+    // memoryを全部吐く(ただし、cur_page分)
+    FILE *mem_fp = fopen(CHECKPOINT_PATH"/memory.img", "wb");
+    if (!mem_fp) {
+        ESP_LOGE(TAG, "Failed to open memory.img");
+        return -1;
     }
+    
+    int write_memory_size = WASM_PAGE_SIZE * memory->cur_page_count;
+    int ret = fwrite(memory->memory_data, sizeof(uint8), write_memory_size, mem_fp);
+    if (ret != write_memory_size) {
+        ESP_LOGE(TAG, "Failed to write memory");
+        fclose(mem_fp);
+        return -1;
+    }
+    fclose(mem_fp);
+
+    // int ret = dump_dirty_memory(memory);
+    // if (ret < 0) {
+    //     ESP_LOGE(TAG, "Failed to dump dirty memory pages");
+    //     return ret;
+    // }
 
     uint64_t mem_dump_time = end_measurement(&mem_metrics);
     ESP_LOGI(TAG, "Memory dump completed in %llu microseconds", mem_dump_time);
@@ -597,11 +613,11 @@ int wasm_dump(WASMExecEnv *exec_env,
 
    ESP_LOGI(TAG, "Starting checkpoint creation");
 
-//    ret = wasm_dump_memory(memory);
-//    if (ret < 0) {
-//        ESP_LOGE(TAG, "Failed to dump memory");
-//        return ret;
-//    }
+   ret = wasm_dump_memory(memory);
+   if (ret < 0) {
+       ESP_LOGE(TAG, "Failed to dump memory");
+       return ret;
+   }
 
    ret = wasm_dump_global(module, globals, global_data);
    if (ret < 0) {

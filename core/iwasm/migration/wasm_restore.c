@@ -80,7 +80,12 @@ static FILE* safe_fopen(const char* path, const char* mode) {
     return fp;
 }
 
-// スタックフレームの復元
+static void*
+set_addr_offset(void* base, uint32 offset)
+{
+    if (offset == -1) return NULL;
+    else return base + offset;
+}
 
 // スタックフレームの復元処理
 void _restore_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, FILE *fp) {
@@ -100,27 +105,28 @@ void _restore_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, FILE *
         return;
     }
 
-    WASMFunctionInstance *function = frame->function;
-    uint32 fidx = frame->function - module_inst->e->functions;
-    ESP_LOGI(TAG, "Processing function index: %d", fidx);
+    // 初期化
+    frame->sp_bottom = (uint32 *)(frame->lp + func->param_cell_num + func->local_cell_num);
+    frame->sp_boundary = (uint32 *)(frame->sp_bottom + func->u.func->max_stack_cell_num);
+    frame->csp_bottom = (WASMBranchBlock *)frame->sp_boundary;
+    frame->csp_boundary = (WASMBranchBlock *)(frame->csp_bottom + func->u.func->max_block_num);
+  
 
-    // リターンアドレスの読み取り
-    uint32 ret_fidx = 0, ret_offset = 0;
-    if (fread(&ret_fidx, sizeof(uint32), 1, fp) != 1 ||
-        fread(&ret_offset, sizeof(uint32), 1, fp) != 1) {
-        ESP_LOGE(TAG, "Failed to read return address information");
-        return;
-    }
+    // リターンアドレス
+    WASMInterpFrame* prev_frame = frame->prev_frame;
+    uint32 fidx, offset;
+    int read_size = fread(&fidx, sizeof(uint32), 1, fp);
+    fread(&offset, sizeof(uint32), 1, fp);
+    if (prev_frame->function != NULL)
+        prev_frame->ip = wasm_get_func_code(prev_frame->function) + offset;
 
-    // スタックの型情報サイズの読み取り
+
+    // 型スタックのサイズ
     uint32 locals = func->param_count + func->local_count;
-    uint32 type_stack_size = 0;
-    if (fread(&type_stack_size, sizeof(uint32), 1, fp) != 1) {
-        ESP_LOGE(TAG, "Failed to read type stack size");
-        return;
-    }
-    // type_stack_sizeはstack領域のサイズだけ(ローカル領域は省く)
-    type_stack_size -= locals;    
+    uint32 full_type_stack_size, type_stack_size;
+    fread(&full_type_stack_size, sizeof(uint32), 1, fp);
+    type_stack_size = full_type_stack_size - locals;                                      // 統一フォーマットでは、ローカルも型/値スタックに入れているが、WAMRの型/値スタックのサイズはローカル抜き
+    // frame->tsp = frame->tsp_bottom + type_stack_size;
 
     // 型スタックの中身
     fseek(fp, sizeof(uint8)*locals, SEEK_CUR);                      // localのやつはWAMRでは必要ないので飛ばす
@@ -131,65 +137,52 @@ void _restore_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, FILE *
         fread(&type_stack[i], sizeof(uint8), 1, fp);
     }
 
-    // スタックフレームの設定
-    frame->sp_bottom = frame->lp + function->param_cell_num + function->local_cell_num;
-    frame->sp_boundary = frame->sp_bottom + function->u.func->max_stack_cell_num;
-    frame->csp_bottom = (WASMBranchBlock *)frame->sp_boundary;
-    frame->csp_boundary = frame->csp_bottom + function->u.func->max_block_num;
-
-    // ローカル変数とスタック値の読み込み
-    uint32 local_cell_num = function->param_cell_num + function->local_cell_num;
-    if (fread(frame->lp, sizeof(uint32), local_cell_num, fp) != local_cell_num) {
-        ESP_LOGE(TAG, "Failed to read local variables");
-        return;
+    // 値スタックのサイズ
+    // uint32 *tsp = frame->tsp_bottom;
+    uint32 value_stack_size = 0;
+    for (uint32 i = 0; i < type_stack_size; ++i) {
+        value_stack_size += type_stack[i];
     }
+    frame->sp = frame->sp_bottom + value_stack_size;
 
-    uint32 stack_size = frame->sp - frame->sp_bottom;
-    if (fread(frame->sp_bottom, sizeof(uint32), stack_size, fp) != stack_size) {
-        ESP_LOGE(TAG, "Failed to read stack values");
-        return;
-    }
+    // 値スタックの中身
+    uint32 local_cell_num = func->param_cell_num + func->local_cell_num;
+    fread(frame->lp, sizeof(uint32), local_cell_num, fp);
+    fread(frame->sp_bottom, sizeof(uint32), value_stack_size, fp);
 
-    // コントロールスタックの復元
-    uint32 ctrl_stack_size = 0;
-    if (fread(&ctrl_stack_size, sizeof(uint32), 1, fp) != 1) {
-        ESP_LOGE(TAG, "Failed to read control stack size");
-        return;
-    }
-
+    // ラベルスタックのサイズ
+    uint32 ctrl_stack_size;
+    fread(&ctrl_stack_size, sizeof(uint32), 1, fp);
     frame->csp = frame->csp_bottom + ctrl_stack_size;
 
-    // ブランチブロックの復元
-    uint8* func_code = wasm_get_func_code(frame->function);
-    for (uint32 i = 0; i < ctrl_stack_size; i++) {
-        WASMBranchBlock* block = &frame->csp_bottom[i];
-        uint32 offset = 0;
 
-        if (fread(&offset, sizeof(uint32), 1, fp) != 1) {
-            ESP_LOGE(TAG, "Failed to read block begin address");
-            return;
-        }
-        block->begin_addr = func_code + offset;
+    // ラベルスタックの中身
+    WASMBranchBlock *csp = frame->csp_bottom;
+    for (int i = 0; i < ctrl_stack_size; ++i, ++csp) {
+        uint64 offset;
 
-        if (fread(&offset, sizeof(uint32), 1, fp) != 1) {
-            ESP_LOGE(TAG, "Failed to read block target address");
-            return;
-        }
-        block->target_addr = func_code + offset;
+        // uint8 *begin_addr;
+        fread(&offset, sizeof(uint32), 1, fp);
+        csp->begin_addr = set_addr_offset(wasm_get_func_code(frame->function), offset);
 
-        if (fread(&offset, sizeof(uint32), 1, fp) != 1) {
-            ESP_LOGE(TAG, "Failed to read block frame sp");
-            return;
-        }
-        block->frame_sp = frame->sp_bottom + offset;
+        // uint8 *target_addr;
+        fread(&offset, sizeof(uint32), 1, fp);
+        csp->target_addr = set_addr_offset(wasm_get_func_code(frame->function), offset);
 
-        if (fread(&block->cell_num, sizeof(uint32), 1, fp) != 1) {
-            ESP_LOGE(TAG, "Failed to read block cell number");
-            return;
-        }
+        // uint32 *frame_sp;
+        fread(&offset, sizeof(uint32), 1, fp);
+        csp->frame_sp = set_addr_offset(frame->sp_bottom, offset);
+
+        // uint32 *frame_tsp
+        // fread(&offset, sizeof(uint32), 1, fp);
+        // csp->frame_tsp = set_addr_offset(frame->tsp_bottom, offset);
+
+        // uint32 cell_num;
+        fread(&csp->cell_num, sizeof(uint32), 1, fp);
+
+        // uint32 count;
+        // fread(&csp->count, sizeof(uint32), 1, fp);
     }
-
-    ESP_LOGI(TAG, "Stack frame restoration completed");
 }
 // メインのスタック復元関数
 struct WASMInterpFrame* wasm_restore_stack(WASMExecEnv **_exec_env) {
@@ -284,47 +277,23 @@ struct WASMInterpFrame* wasm_restore_stack(WASMExecEnv **_exec_env) {
     return frame;
 }
 
-// メモリの復元
-int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory, uint8** maddr) {
-    ESP_LOGI(TAG, "Starting memory restoration");
-
-    if (!module || !memory || !*memory) {
-        ESP_LOGE(TAG, "Invalid parameters for memory restoration");
-        return -1;
-    }
-
-    print_memory_status(*memory);
-
-    // メモリカウントファイルの読み取り
-    FILE* fp = safe_fopen(CHECKPOINT_PATH"/MEMCOUNT.IMG", "rb");
-    if (!fp) {
-        return -1;
-    }
-
-    uint32 page_count = 0;
-    if (fread(&page_count, sizeof(uint32), 1, fp) != 1) {
-        ESP_LOGE(TAG, "Failed to read page count");
-        fclose(fp);
-        return -1;
-    }
-    fclose(fp);
-
-    ESP_LOGI(TAG, "Read page count: %d", page_count);
-
-    // メモリの総サイズを計算
-    uint32_t total_memory_size = (*memory)->cur_page_count * (*memory)->num_bytes_per_page;
-    ESP_LOGI(TAG, "Total memory size: %u bytes", total_memory_size);
-
+int restore_dirty_memory(WASMMemoryInstance **memory) {
     // メモリデータファイルを開く
-    fp = safe_fopen(CHECKPOINT_PATH"/MEMORY.IMG", "rb");
+    FILE *fp = safe_fopen(CHECKPOINT_PATH"/MEMORY.IMG", "rb");
     if (!fp) {
         ESP_LOGE(TAG, "Failed to open memory data file");
         return -1;
     }
 
+    // メモリの総サイズを計算
+    // uint32_t total_memory_size = (*memory)->cur_page_count * (*memory)->num_bytes_per_page;
+    uint32_t total_memory_size = (*memory)->cur_page_count * WASM_PAGE_SIZE;
+    ESP_LOGI(TAG, "Total memory size (page_size=65536): %u bytes", (*memory)->cur_page_count * WASM_PAGE_SIZE);
+    ESP_LOGI(TAG, "Total memory size (page_size=%d): %u bytes", (*memory)->num_bytes_per_page,
+                                                                (*memory)->cur_page_count * (*memory)->num_bytes_per_page);
+
     // メモリバッファの割り当て
-    const size_t BUFFER_SIZE = 4096;
-    uint8_t* buffer = heap_caps_malloc(BUFFER_SIZE, MALLOC_CAP_SPIRAM);
+    uint8_t* buffer = heap_caps_malloc(LINUX_PAGE_SIZE, MALLOC_CAP_SPIRAM);
     if (!buffer) {
         ESP_LOGE(TAG, "Failed to allocate memory buffer");
         fclose(fp);
@@ -349,7 +318,7 @@ int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory,
         }
 
         // オフセットの妥当性チェック
-        if (offset >= total_memory_size || offset % WASM_PAGE_SIZE != 0) {
+        if (offset >= total_memory_size || offset % LINUX_PAGE_SIZE != 0) {
             ESP_LOGE(TAG, "Invalid offset detected: %u (total size: %u)", 
                      offset, total_memory_size);
             success = false;
@@ -357,23 +326,23 @@ int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory,
         }
 
         // データの読み取りとコピー
-        read_size = fread(buffer, 1, WASM_PAGE_SIZE, fp);
-        if (read_size != WASM_PAGE_SIZE) {
+        read_size = fread(buffer, 1, LINUX_PAGE_SIZE, fp);
+        if (read_size != LINUX_PAGE_SIZE) {
             ESP_LOGE(TAG, "Failed to read memory data at offset %u", offset);
             success = false;
             break;
         }
 
         // メモリへの書き込み
-        if (offset + WASM_PAGE_SIZE <= total_memory_size) {
-            memcpy((*memory)->memory_data + offset, buffer, WASM_PAGE_SIZE);
+        if (offset + LINUX_PAGE_SIZE <= total_memory_size) {
+            memcpy((*memory)->memory_data + offset, buffer, LINUX_PAGE_SIZE);
         } else {
             ESP_LOGE(TAG, "Memory copy would exceed bounds at offset %u", offset);
             success = false;
             break;
         }
 
-        total_read += WASM_PAGE_SIZE;
+        total_read += LINUX_PAGE_SIZE;
         last_valid_offset = offset;
 
         if (total_read % (64 * 1024) == 0) {
@@ -392,10 +361,56 @@ int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory,
         return -1;
     }
 
-    *maddr = (uint8*)(page_count * (*memory)->num_bytes_per_page);
     ESP_LOGI(TAG, "Memory restoration completed successfully");
     ESP_LOGI(TAG, "Total bytes read: %u", total_read);
     ESP_LOGI(TAG, "Last valid offset: %u", last_valid_offset);
+
+    return 0;
+}
+
+// メモリの復元
+int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory, uint8** maddr) {
+    ESP_LOGI(TAG, "Starting memory restoration");
+
+    if (!module || !memory || !*memory) {
+        ESP_LOGE(TAG, "Invalid parameters for memory restoration");
+        return -1;
+    }
+
+    print_memory_status(*memory);
+
+    // メモリカウントファイルの読み取り
+    FILE* mem_size_fp = safe_fopen(CHECKPOINT_PATH"/MEMCOUNT.IMG", "rb");
+    if (!mem_size_fp) {
+        return -1;
+    }
+    // restore page_count
+    uint32 page_count;
+    fread(&page_count, sizeof(uint32), 1, mem_size_fp);
+    fclose(mem_size_fp);
+
+    // restoreしたpage_countになるようにメモリを拡張する
+    wasm_enlarge_memory(module, page_count- (*memory)->cur_page_count);
+
+    // NOTE: num_bytes_per_pageは65536とは限らないので、この実装であってるかちょっと不明
+    // *maddr = page_count * (*memory)->num_bytes_per_page;
+    *maddr = (uint8 *)(page_count * WASM_PAGE_SIZE);
+    ESP_LOGI(TAG, "Read page count: %d", page_count);
+
+
+    // restore memory_data
+    FILE *mem_fp = safe_fopen(CHECKPOINT_PATH"/MEMORY.IMG", "rb");
+    if (!mem_fp) {
+        ESP_LOGE(TAG, "Failed to open memory data file");
+        return -1;
+    }
+    
+    int read_size = WASM_PAGE_SIZE * (*memory)->cur_page_count;
+    if (fread((*memory)->memory_data, sizeof(uint8), read_size, mem_fp) != read_size) {
+        ESP_LOGE(TAG, "Failed to read memory.img");
+        return -1;
+    }
+    fclose(mem_fp);
 
     return 0;
 }

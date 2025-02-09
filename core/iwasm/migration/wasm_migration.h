@@ -11,7 +11,8 @@ extern "C" {
 #endif
 
 // ページサイズの定義を追加
-#define WASM_PAGE_SIZE 4096
+#define LINUX_PAGE_SIZE 4096
+#define WASM_PAGE_SIZE 65536
 
 
 // 必要な関数宣言を追加
