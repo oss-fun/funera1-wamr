@@ -204,12 +204,12 @@ int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory,
     uint32 page_count;
     fread(&page_count, sizeof(uint32), 1, mem_size_fp);
     wasm_enlarge_memory(module, page_count- (*memory)->cur_page_count);
-    *maddr = (uint8 *)(page_count * (*memory)->num_bytes_per_page);
+    *maddr = (uint8 *)(page_count * WASM_PAGE_SIZE);
 
-    restore_dirty_memory(memory, memory_fp);
+    // restore_dirty_memory(memory, memory_fp);
     // restore memory_data
-    // fread((*memory)->memory_data, sizeof(uint8),
-    //         (*memory)->num_bytes_per_page * (*memory)->cur_page_count, memory_fp);
+    int read_size = WASM_PAGE_SIZE * (*memory)->cur_page_count;
+    fread((*memory)->memory_data, sizeof(uint8), read_size, memory_fp);
 
     fclose(memory_fp);
     fclose(mem_size_fp);
