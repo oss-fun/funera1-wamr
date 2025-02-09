@@ -18,8 +18,8 @@
 #include "wasm_dispatch.h"
 #include "../interpreter/wasm_interp.h"
 
-#define MOUNT_POINT "/sdcard"
-#define CHECKPOINT_DIR "/SDCARD/CHECKP~1"
+#define MOUNT_POINT ""
+#define CHECKPOINT_DIR ""
 #define CHECKPOINT_PATH MOUNT_POINT CHECKPOINT_DIR
 #define BH_PLATFORM_LINUX 0
 #define MEMORY_BUFFER_SIZE (32 * 1024)  // 32KB
@@ -94,6 +94,7 @@ void _restore_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, FILE *
     }
 
     WASMModuleInstance *module_inst = (WASMModuleInstance *)exec_env->module_inst;
+    WASMFunctionInstance *func = (WASMFunctionInstance *)frame->function;
     if (!module_inst || !frame->function) {
         ESP_LOGE(TAG, "Invalid module instance or frame function");
         return;
@@ -112,10 +113,22 @@ void _restore_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, FILE *
     }
 
     // スタックの型情報サイズの読み取り
+    uint32 locals = func->param_count + func->local_count;
     uint32 type_stack_size = 0;
     if (fread(&type_stack_size, sizeof(uint32), 1, fp) != 1) {
         ESP_LOGE(TAG, "Failed to read type stack size");
         return;
+    }
+    // type_stack_sizeはstack領域のサイズだけ(ローカル領域は省く)
+    type_stack_size -= locals;    
+
+    // 型スタックの中身
+    fseek(fp, sizeof(uint8)*locals, SEEK_CUR);                      // localのやつはWAMRでは必要ないので飛ばす
+
+    uint8 type_stack[type_stack_size];
+    // uint32* tsp_bottom = frame->tsp_bottom;
+    for (uint32 i = 0; i < type_stack_size; ++i) {
+        fread(&type_stack[i], sizeof(uint8), 1, fp);
     }
 
     // スタックフレームの設定
@@ -202,7 +215,7 @@ struct WASMInterpFrame* wasm_restore_stack(WASMExecEnv **_exec_env) {
 
     FILE* fp = fopen(frame_file, "rb");
     if (!fp) {
-        ESP_LOGE(TAG, "Failed to open frame count file");
+        ESP_LOGE(TAG, "Failed to open frame count file: %s", frame_file);
         return NULL;
     }
 
