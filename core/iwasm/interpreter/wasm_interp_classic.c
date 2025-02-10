@@ -11,6 +11,7 @@
 #include "wasm_opcode.h"
 #include "wasm_loader.h"
 #include "wasm_memory.h"
+#include "esp_log.h"
 #include "../common/wasm_exec_env.h"
 #include "../migration/wasm_migration.h"
 #include "../migration/wasm_dump.h"
@@ -1427,6 +1428,8 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
     }
 
 // #define FETCH_OPCODE_AND_DISPATCH() goto *handle_table[*frame_ip++]
+static int dispatch_count = 0;
+static const char *TAG = "wasm-interp";
 #define FETCH_OPCODE_AND_DISPATCH()                                     \
 do {                                                                    \
     CHECK_DUMP()                                                        \
