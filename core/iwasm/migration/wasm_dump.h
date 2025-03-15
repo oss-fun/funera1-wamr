@@ -5,6 +5,7 @@
 #include "../interpreter/wasm_interp.h"
 
 void wasm_set_checkpoint(bool f);
+void wasm_print_checkpoint_latency();
 bool wasm_get_checkpoint();
 
 int wasm_dump(WASMExecEnv *exec_env,

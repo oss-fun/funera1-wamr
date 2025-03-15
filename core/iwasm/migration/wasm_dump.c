@@ -38,14 +38,26 @@ int debug_memories(WASMModuleInstance *module) {
     // bytes_per_page
     for (int i = 0; i < module->memory_count; i++) {
         WASMMemoryInstance *memory = (WASMMemoryInstance *)(module->memories[i]);
-        printf("%d) bytes_per_page: %d\n", i, memory->num_bytes_per_page);
-        printf("%d) cur_page_count: %d\n", i, memory->cur_page_count);
-        printf("%d) max_page_count: %d\n", i, memory->max_page_count);
-        printf("\n");
+        print_memory_status(memory);
+        // printf("%d) bytes_per_page: %d\n", i, memory->num_bytes_per_page);
+        // printf("%d) cur_page_count: %d\n", i, memory->cur_page_count);
+        // printf("%d) max_page_count: %d\n", i, memory->max_page_count);
+        // printf("\n");
     }
 
     printf("=== debug memories ===\n");
     return 0;
+}
+
+void print_memory_status(WASMMemoryInstance *memory) {
+    if (!memory) {
+        fprintf(stderr, "[ERROR] Invalid memory instance\n");
+        return;
+    }
+    printf("[INFO] bytes_per_page: %d\n", memory->num_bytes_per_page);
+    printf("[INFO] cur_page_count: %d\n", memory->cur_page_count);
+    printf("[INFO] max_page_count: %d\n", memory->max_page_count);
+    printf("\n");
 }
 
 // 積まれてるframe stackを出力する
@@ -371,21 +383,21 @@ int dump_dirty_memory(WASMMemoryInstance *memory) {
 }
 
 int wasm_dump_memory(WASMMemoryInstance *memory) {
+    // print memroy info for debugging
+    // print_memory_status(memory);
+
     FILE *mem_size_fp = open_image("mem_page_count.img", "wb");
-
-    dump_dirty_memory(memory);
-
-
     printf("page_count: %d\n", memory->cur_page_count);
     fwrite(&(memory->cur_page_count), sizeof(uint32), 1, mem_size_fp);
-
     fclose(mem_size_fp);
 
+    // dump_dirty_memory(memory);
+
     // デバッグのために、すべてのメモリも保存
-    // FILE *all_memory_fp = open_image("all_memory.img", "wb");
-    // fwrite(memory->memory_data, sizeof(uint8),
-    //        memory->num_bytes_per_page * memory->cur_page_count, all_memory_fp);
-    // fclose(all_memory_fp);
+    FILE *all_memory_fp = open_image("all_memory.img", "wb");
+    fwrite(memory->memory_data, sizeof(uint8),
+           memory->num_bytes_per_page * memory->cur_page_count, all_memory_fp);
+    fclose(all_memory_fp);
     return 0;
 }
 
@@ -516,8 +528,16 @@ static bool sig_flag = false;
 //     wasm_set_checkpoint(true);
 // }
 
+struct timespec ckpt_request_time, ckpt_exec_time;
+inline
+void wasm_print_checkpoint_latency() {
+    clock_gettime(CLOCK_MONOTONIC, &ckpt_exec_time);
+    fprintf(stderr, "checkpoint latency: %lu [ns]\n", get_time(ckpt_request_time, ckpt_exec_time));
+}
+
 inline 
 void wasm_set_checkpoint(bool f) {
+    clock_gettime(CLOCK_MONOTONIC, &ckpt_request_time);
     sig_flag = f;
 }
 

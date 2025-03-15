@@ -197,7 +197,6 @@ void restore_dirty_memory(WASMMemoryInstance **memory, FILE* memory_fp) {
 }
 
 int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory, uint8** maddr) {
-    FILE* memory_fp = open_image("memory.img", "rb");
     FILE* mem_size_fp = open_image("mem_page_count.img", "rb");
 
     // restore page_count
@@ -205,14 +204,16 @@ int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory,
     fread(&page_count, sizeof(uint32), 1, mem_size_fp);
     wasm_enlarge_memory(module, page_count- (*memory)->cur_page_count);
     *maddr = page_count * (*memory)->num_bytes_per_page;
+    fclose(mem_size_fp);
 
-    restore_dirty_memory(memory, memory_fp);
-    // restore memory_data
-    // fread((*memory)->memory_data, sizeof(uint8),
-    //         (*memory)->num_bytes_per_page * (*memory)->cur_page_count, memory_fp);
+    // FILE* memory_fp = open_image("memory.img", "rb");
+    // restore_dirty_memory(memory, memory_fp);
+
+    FILE* memory_fp = open_image("all_memory.img", "rb");
+    fread((*memory)->memory_data, sizeof(uint8),
+            (*memory)->num_bytes_per_page * (*memory)->cur_page_count, memory_fp);
 
     fclose(memory_fp);
-    fclose(mem_size_fp);
     return 0;
 }
 

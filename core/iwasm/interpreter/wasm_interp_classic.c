@@ -1404,16 +1404,17 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
 
 #define DO_CHECKPOINT()                                                     \
     do {                                                                    \
+        wasm_print_checkpoint_latency();                                    \
         SYNC_ALL_TO_FRAME();                                                \
         uint8 *dummy_ip;                                                    \
         uint32 *dummy_sp;                                                   \
         dummy_ip = frame_ip;                                                \
         dummy_sp = frame_sp;                                                \
-        int rc = wasm_dump(exec_env, module, memory,                        \
+        int err = wasm_dump(exec_env, module, memory,                       \
             globals, global_data, global_addr, cur_func,                    \
             frame, dummy_ip, dummy_sp, frame_csp,                           \
             frame_ip_end, else_addr, end_addr, maddr, done_flag);           \
-        if (rc < 0) {                                                       \
+        if (err < 0) {                                                      \
             perror("failed to dump\n");                                     \
             exit(1);                                                        \
         }                                                                   \
@@ -1439,11 +1440,30 @@ int get_env_int(const char *env_var, int default_value) {
 
     return (int)val;
 }
+
+inline int64_t get_nsec (struct timespec *ts) {
+  return ts->tv_sec * 1e9 + ts->tv_nsec;
+}
+
+static struct timespec dispatch_timestamp[10];
+#define TIMESTAMP()                                                         \
+do {                                                                        \
+    clock_gettime(CLOCK_MONOTONIC, &dispatch_timestamp[dispatch_count%10]); \
+} while(0);                                                                 \
+
+#define PRINT_TIMESTAMPS()                                                      \
+do {                                                                            \
+    for (int j = 0; j < 10; j++)                                                \
+        printf("%ld\n", get_nsec(&dispatch_timestamp[(dispatch_count+j)%10]));   \
+} while(0);                                                                     \
+
 static int dispatch_count = 0;
 int ckpt_point;
-#define CHECK_DUMP()                                                        \
+#define CHECK_DUMP()                                                        \   
     dispatch_count++;                                                       \
+    TIMESTAMP();                                                            \
     if (wasm_get_checkpoint() || dispatch_count == ckpt_point) {            \
+        PRINT_TIMESTAMPS();                                                 \
         DO_CHECKPOINT();                                                    \
     }
 
@@ -1621,13 +1641,13 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
 
 #if BH_PLATFORM_LINUX == 1
     // Clear soft-dirty bit
-    clear_refs();
+    // clear_refs();
 #endif
 
     // リストアの初期化時間の計測(終了)
     struct timespec ts1;
-    clock_gettime(CLOCK_MONOTONIC, &ts1);
-    fprintf(stderr, "boot_end, %lu\n", (uint64_t)(ts1.tv_sec*1e9) + ts1.tv_nsec);
+    // clock_gettime(CLOCK_MONOTONIC, &ts1);
+    // fprintf(stderr, "boot_end, %lu\n", (uint64_t)(ts1.tv_sec*1e9) + ts1.tv_nsec);
 
     if (get_restore_flag()) {
         // bool done_flag;
@@ -1691,7 +1711,9 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
                 goto got_exception;
             }
 
-            HANDLE_OP(WASM_OP_NOP) { HANDLE_OP_END(); }
+            HANDLE_OP(WASM_OP_NOP) { 
+                HANDLE_OP_END(); 
+            }
 
 #if WASM_ENABLE_EXCE_HANDLING != 0
             HANDLE_OP(WASM_OP_RETHROW)
