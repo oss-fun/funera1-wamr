@@ -13,6 +13,7 @@ extern "C" {
 // ページサイズの定義を追加
 #define LINUX_PAGE_SIZE 4096
 #define WASM_PAGE_SIZE 65536
+#define KVED_MEMORY_SIZE 2*WASM_PAGE_SIZE
 
 
 // 必要な関数宣言を追加
@@ -28,6 +29,15 @@ void print_memory_info(void);
 void init_restore_system(void);
 void set_restore_flag(bool f);
 bool get_restore_flag(void);
+
+struct TimeMetrics {
+    struct timeval start;
+    struct timeval end;
+};
+
+// Time measurement functions
+void start_measurement(struct TimeMetrics* metrics);
+uint64_t end_measurement(struct TimeMetrics* metrics);
 
 #ifdef __cplusplus
 }

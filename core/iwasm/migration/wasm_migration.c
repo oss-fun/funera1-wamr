@@ -25,9 +25,17 @@ bool wasm_get_checkpoint(void) {
     return checkpoint_flag;
 }
 
+struct timespec ckpt_request_time, ckpt_exec_time;
 void wasm_set_checkpoint(bool f) {
     ESP_LOGI(TAG, "Setting checkpoint flag to: %d", f);
+    clock_gettime(CLOCK_MONOTONIC, &ckpt_request_time);
     checkpoint_flag = f;
+}
+
+void wasm_print_checkpoint_latency() {
+    clock_gettime(CLOCK_MONOTONIC, &ckpt_exec_time);
+    ESP_LOGI(TAG, "checkpoint latency: %lu [ns]", get_time(ckpt_request_time, ckpt_exec_time));
+    // fprintf(stderr, "checkpoint latency: %lu [ns]\n", get_time(ckpt_request_time, ckpt_exec_time));
 }
 
 void set_restore_flag(bool f) {

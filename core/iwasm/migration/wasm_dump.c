@@ -52,17 +52,17 @@ static void dump_file_contents(const char* filepath, size_t max_bytes) {
 }
 
 // Helper structs
-struct TimeMetrics {
-    struct timeval start;
-    struct timeval end;
-};
+// struct TimeMetrics {
+//     struct timeval start;
+//     struct timeval end;
+// };
 
 // Time measurement functions
-static inline void start_measurement(struct TimeMetrics* metrics) {
+inline void start_measurement(struct TimeMetrics* metrics) {
     gettimeofday(&metrics->start, NULL);
 }
 
-static inline uint64_t end_measurement(struct TimeMetrics* metrics) {
+inline uint64_t end_measurement(struct TimeMetrics* metrics) {
     gettimeofday(&metrics->end, NULL);
     return (metrics->end.tv_sec - metrics->start.tv_sec) * 1000000LL + 
            (metrics->end.tv_usec - metrics->start.tv_usec);
@@ -301,7 +301,22 @@ error:
    return -1;
 }
 
+static void print_memory_status(WASMMemoryInstance *memory) {
+    if (!memory) {
+        ESP_LOGE(TAG, "Invalid memory instance");
+        return;
+    }
+    ESP_LOGI(TAG, "Memory Status:");
+    ESP_LOGI(TAG, "  Current pages: %d", memory->cur_page_count);
+    ESP_LOGI(TAG, "  Bytes per page: %d", memory->num_bytes_per_page);
+    ESP_LOGI(TAG, "  Total size: %d bytes", memory->cur_page_count * memory->num_bytes_per_page);
+    ESP_LOGI(TAG, "  Memory data start: %p", memory->memory_data);
+    ESP_LOGI(TAG, "  Memory data end: %p", memory->memory_data_end);
+}
+
 int wasm_dump_memory(WASMMemoryInstance *memory) {
+    print_memory_status(memory);
+
     struct TimeMetrics mem_metrics;
     start_measurement(&mem_metrics);
 
@@ -333,7 +348,12 @@ int wasm_dump_memory(WASMMemoryInstance *memory) {
         return -1;
     }
     
-    int write_memory_size = WASM_PAGE_SIZE * memory->cur_page_count;
+    // NOTE: kved用のハードコーディング
+    // 普通はmemory.growが無いWasmコードは初期値のメモリサイズがbyte_per_pageに格納されているはずなのに、
+    // ESP32版のWAMRはよくわからない大きな値が入っている
+
+    // int write_memory_size = KVED_MEMORY_SIZE * memory->cur_page_count;
+    int write_memory_size = memory->num_bytes_per_page * memory->cur_page_count;
     int ret = fwrite(memory->memory_data, sizeof(uint8), write_memory_size, mem_fp);
     if (ret != write_memory_size) {
         ESP_LOGE(TAG, "Failed to write memory");
@@ -349,7 +369,7 @@ int wasm_dump_memory(WASMMemoryInstance *memory) {
     // }
 
     uint64_t mem_dump_time = end_measurement(&mem_metrics);
-    ESP_LOGI(TAG, "Memory dump completed in %llu microseconds", mem_dump_time);
+    ESP_LOGI(TAG, "dumped memory: %llu [ms]", mem_dump_time/1000);
 
     return 0;
 }
@@ -387,7 +407,8 @@ int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, ui
     }
 
     uint64_t global_dump_time = end_measurement(&global_metrics);
-    ESP_LOGI(TAG, "Global variables dump time: %llu microseconds", global_dump_time);
+    // ESP_LOGI(TAG, "Global variables dump time: %llu microseconds", global_dump_time);
+    ESP_LOGI(TAG, "dumped global: %llu [ms]", global_dump_time/1000);
 
     fclose(fp);
     return 0;
@@ -411,7 +432,7 @@ int wasm_dump_program_counter(WASMModuleInstance *module, WASMFunctionInstance *
     uint32 fidx = func - module->e->functions;
     uint32 offset = frame_ip - wasm_get_func_code(func);
 
-    ESP_LOGI(TAG, "Dumping program counter: fidx=%d, offset=%d", fidx, offset);
+    // ESP_LOGI(TAG, "Dumping program counter: fidx=%d, offset=%d", fidx, offset);
 
     FILE* fp = fopen(CHECKPOINT_PATH"/PROGRAM.IMG", "wb");
     if (!fp) {
@@ -425,7 +446,7 @@ int wasm_dump_program_counter(WASMModuleInstance *module, WASMFunctionInstance *
     fclose(fp);
 
     uint64_t pc_dump_time = end_measurement(&pc_metrics);
-    ESP_LOGI(TAG, "Program counter dump time: %llu microseconds", pc_dump_time);
+    ESP_LOGI(TAG, "dumped program_counter: %llu [ms]", pc_dump_time/1000);
 
     return success ? 0 : -1;
 }
@@ -498,7 +519,7 @@ static void _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, FI
     }
 
     uint64_t stack_dump_time = end_measurement(&stack_metrics);
-    ESP_LOGI(TAG, "Stack frame dump time: %llu microseconds", stack_dump_time);
+    // ESP_LOGI(TAG, "Stack frame dump time: %llu microseconds", stack_dump_time);
 }
 
 int wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame) {
@@ -539,39 +560,6 @@ int wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame) {
         _dump_stack(exec_env, frame, fp, (i==1));
         fclose(fp);
     } while((frame = frame->prev_frame));
-//     while (curr) {
-//         if (curr->function) frame_count++;
-//         curr = curr->prev_frame;
-//     }
-//     if (frame_count == 0) return -1;
-
-//     curr = frame;
-//     for (int i = 1; i <= frame_count && curr; i++) {
-//         snprintf(file_path, sizeof(file_path), frame_fmt, CHECKPOINT_PATH, i);
-//         fp = fopen(file_path, "wb");
-//         if (!fp) {
-//             return -1;
-//         }
-
-//         if (!curr->function || 
-//             curr->function < module->e->functions || 
-//             curr->function >= module->e->functions + module->e->function_count) {
-//             fclose(fp);
-//             return -1;
-//         }
-
-//         uint32_t entry_fidx = (uint32_t)(curr->function - module->e->functions);
-//         if (fwrite(&entry_fidx, sizeof(uint32_t), 1, fp) != 1) {
-//            fclose(fp);
-//            return -1;
-//         }
-
-//        _dump_stack(exec_env, curr, fp, (i == 1));
-//        fclose(fp);
-//        fp = NULL;
-
-//        curr = curr->prev_frame;
-//    }
 
    snprintf(file_path, sizeof(file_path), frame_count_file, CHECKPOINT_PATH);
    fp = fopen(file_path, "wb");
@@ -584,7 +572,7 @@ int wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame) {
    fclose(fp);
 
    uint64_t total_time = end_measurement(&total_metrics);
-   ESP_LOGI(TAG, "Total stack dump time: %llu microseconds", total_time);
+   ESP_LOGI(TAG, "dumped stack: %llu [ms]", total_time/1000);
 
    return 0;
 }
@@ -639,7 +627,7 @@ int wasm_dump(WASMExecEnv *exec_env,
 
    uint64_t total_time_us = end_measurement(&total_time);
    ESP_LOGI(TAG, "Checkpoint creation completed:");
-   ESP_LOGI(TAG, "Total time: %llu microseconds", total_time_us);
+   ESP_LOGI(TAG, "Total checkpoint time: %llu [ms]", total_time_us/1000);
 
    return 0;
 }

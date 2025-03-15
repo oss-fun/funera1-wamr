@@ -92,6 +92,9 @@ void _restore_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, FILE *
     ESP_LOGI(TAG, "Starting stack frame restoration");
     print_memory_info();
 
+    struct TimeMetrics stack_metrics;
+    start_measurement(&stack_metrics);
+
     // 基本的な入力検証
     if (!exec_env || !frame || !fp) {
         ESP_LOGE(TAG, "Invalid parameters in stack restoration");
@@ -183,6 +186,9 @@ void _restore_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, FILE *
         // uint32 count;
         // fread(&csp->count, sizeof(uint32), 1, fp);
     }
+
+   uint64_t stack_restore_time = end_measurement(&stack_metrics);
+   ESP_LOGI(TAG, "restore stack: %llu [ms]", stack_restore_time/1000);
 }
 // メインのスタック復元関数
 struct WASMInterpFrame* wasm_restore_stack(WASMExecEnv **_exec_env) {
@@ -277,100 +283,100 @@ struct WASMInterpFrame* wasm_restore_stack(WASMExecEnv **_exec_env) {
     return frame;
 }
 
-int restore_dirty_memory(WASMMemoryInstance **memory) {
-    // メモリデータファイルを開く
-    FILE *fp = safe_fopen(CHECKPOINT_PATH"/MEMORY.IMG", "rb");
-    if (!fp) {
-        ESP_LOGE(TAG, "Failed to open memory data file");
-        return -1;
-    }
+// int restore_dirty_memory(WASMMemoryInstance **memory) {
+//     // メモリデータファイルを開く
+//     FILE *fp = safe_fopen(CHECKPOINT_PATH"/MEMORY.IMG", "rb");
+//     if (!fp) {
+//         ESP_LOGE(TAG, "Failed to open memory data file");
+//         return -1;
+//     }
 
-    // メモリの総サイズを計算
-    // uint32_t total_memory_size = (*memory)->cur_page_count * (*memory)->num_bytes_per_page;
-    uint32_t total_memory_size = (*memory)->cur_page_count * WASM_PAGE_SIZE;
-    ESP_LOGI(TAG, "Total memory size (page_size=65536): %u bytes", (*memory)->cur_page_count * WASM_PAGE_SIZE);
-    ESP_LOGI(TAG, "Total memory size (page_size=%d): %u bytes", (*memory)->num_bytes_per_page,
-                                                                (*memory)->cur_page_count * (*memory)->num_bytes_per_page);
+//     // メモリの総サイズを計算
+//     // uint32_t total_memory_size = (*memory)->cur_page_count * (*memory)->num_bytes_per_page;
+//     uint32_t total_memory_size = (*memory)->cur_page_count * KVED_MEMORY_SIZE;
 
-    // メモリバッファの割り当て
-    uint8_t* buffer = heap_caps_malloc(LINUX_PAGE_SIZE, MALLOC_CAP_SPIRAM);
-    if (!buffer) {
-        ESP_LOGE(TAG, "Failed to allocate memory buffer");
-        fclose(fp);
-        return -1;
-    }
+//     // メモリバッファの割り当て
+//     uint8_t* buffer = heap_caps_malloc(LINUX_PAGE_SIZE, MALLOC_CAP_SPIRAM);
+//     if (!buffer) {
+//         ESP_LOGE(TAG, "Failed to allocate memory buffer");
+//         fclose(fp);
+//         return -1;
+//     }
 
-    bool success = true;
-    size_t total_read = 0;
-    uint32_t last_valid_offset = 0;
+//     bool success = true;
+//     size_t total_read = 0;
+//     uint32_t last_valid_offset = 0;
 
-    while (!feof(fp) && success) {
-        uint32_t offset;
-        size_t read_size = fread(&offset, sizeof(uint32), 1, fp);
+//     while (!feof(fp) && success) {
+//         uint32_t offset;
+//         size_t read_size = fread(&offset, sizeof(uint32), 1, fp);
         
-        if (read_size != 1) {
-            if (feof(fp)) {
-                break;
-            }
-            ESP_LOGE(TAG, "Failed to read offset");
-            success = false;
-            break;
-        }
+//         if (read_size != 1) {
+//             if (feof(fp)) {
+//                 break;
+//             }
+//             ESP_LOGE(TAG, "Failed to read offset");
+//             success = false;
+//             break;
+//         }
 
-        // オフセットの妥当性チェック
-        if (offset >= total_memory_size || offset % LINUX_PAGE_SIZE != 0) {
-            ESP_LOGE(TAG, "Invalid offset detected: %u (total size: %u)", 
-                     offset, total_memory_size);
-            success = false;
-            break;
-        }
+//         // オフセットの妥当性チェック
+//         if (offset >= total_memory_size || offset % LINUX_PAGE_SIZE != 0) {
+//             ESP_LOGE(TAG, "Invalid offset detected: %u (total size: %u)", 
+//                      offset, total_memory_size);
+//             success = false;
+//             break;
+//         }
 
-        // データの読み取りとコピー
-        read_size = fread(buffer, 1, LINUX_PAGE_SIZE, fp);
-        if (read_size != LINUX_PAGE_SIZE) {
-            ESP_LOGE(TAG, "Failed to read memory data at offset %u", offset);
-            success = false;
-            break;
-        }
+//         // データの読み取りとコピー
+//         read_size = fread(buffer, 1, LINUX_PAGE_SIZE, fp);
+//         if (read_size != LINUX_PAGE_SIZE) {
+//             ESP_LOGE(TAG, "Failed to read memory data at offset %u", offset);
+//             success = false;
+//             break;
+//         }
 
-        // メモリへの書き込み
-        if (offset + LINUX_PAGE_SIZE <= total_memory_size) {
-            memcpy((*memory)->memory_data + offset, buffer, LINUX_PAGE_SIZE);
-        } else {
-            ESP_LOGE(TAG, "Memory copy would exceed bounds at offset %u", offset);
-            success = false;
-            break;
-        }
+//         // メモリへの書き込み
+//         if (offset + LINUX_PAGE_SIZE <= total_memory_size) {
+//             memcpy((*memory)->memory_data + offset, buffer, LINUX_PAGE_SIZE);
+//         } else {
+//             ESP_LOGE(TAG, "Memory copy would exceed bounds at offset %u", offset);
+//             success = false;
+//             break;
+//         }
 
-        total_read += LINUX_PAGE_SIZE;
-        last_valid_offset = offset;
+//         total_read += LINUX_PAGE_SIZE;
+//         last_valid_offset = offset;
 
-        if (total_read % (64 * 1024) == 0) {
-            ESP_LOGI(TAG, "Memory restore progress: %d%%", 
-                     (int)(total_read * 100 / total_memory_size));
-            //esp_task_wdt_reset();
-            vTaskDelay(pdMS_TO_TICKS(1));
-        }
-    }
+//         if (total_read % (64 * 1024) == 0) {
+//             ESP_LOGI(TAG, "Memory restore progress: %d%%", 
+//                      (int)(total_read * 100 / total_memory_size));
+//             //esp_task_wdt_reset();
+//             vTaskDelay(pdMS_TO_TICKS(1));
+//         }
+//     }
 
-    heap_caps_free(buffer);
-    fclose(fp);
+//     heap_caps_free(buffer);
+//     fclose(fp);
 
-    if (!success) {
-        ESP_LOGE(TAG, "Memory restoration failed");
-        return -1;
-    }
+//     if (!success) {
+//         ESP_LOGE(TAG, "Memory restoration failed");
+//         return -1;
+//     }
 
-    ESP_LOGI(TAG, "Memory restoration completed successfully");
-    ESP_LOGI(TAG, "Total bytes read: %u", total_read);
-    ESP_LOGI(TAG, "Last valid offset: %u", last_valid_offset);
+//     ESP_LOGI(TAG, "Memory restoration completed successfully");
+//     ESP_LOGI(TAG, "Total bytes read: %u", total_read);
+//     ESP_LOGI(TAG, "Last valid offset: %u", last_valid_offset);
 
-    return 0;
-}
+//     return 0;
+// }
+
 
 // メモリの復元
 int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory, uint8** maddr) {
-    ESP_LOGI(TAG, "Starting memory restoration");
+    // ESP_LOGI(TAG, "Starting memory restoration");
+    struct TimeMetrics mem_metrics;
+    start_measurement(&mem_metrics);
 
     if (!module || !memory || !*memory) {
         ESP_LOGE(TAG, "Invalid parameters for memory restoration");
@@ -405,12 +411,16 @@ int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory,
         return -1;
     }
     
-    int read_size = WASM_PAGE_SIZE * (*memory)->cur_page_count;
+    // int read_size = KVED_MEMORY_SIZE * (*memory)->cur_page_count;
+    int read_size = (*memory)->num_bytes_per_page * (*memory)->cur_page_count;
     if (fread((*memory)->memory_data, sizeof(uint8), read_size, mem_fp) != read_size) {
         ESP_LOGE(TAG, "Failed to read memory.img");
         return -1;
     }
     fclose(mem_fp);
+
+    uint64_t mem_restore_time = end_measurement(&mem_metrics);
+    ESP_LOGI(TAG, "restore memory: %llu [ms]", mem_restore_time/1000);
 
     return 0;
 }
@@ -420,7 +430,10 @@ int wasm_restore_global(const WASMModuleInstance *module,
                        const WASMGlobalInstance *globals, 
                        uint8 **global_data, 
                        uint8 **global_addr) {
-    ESP_LOGI(TAG, "Starting global restoration");
+    // ESP_LOGI(TAG, "Starting global restoration");
+
+    struct TimeMetrics global_metrics;
+    start_measurement(&global_metrics);
 
     if (!module || !globals || !global_data || !*global_data) {
         ESP_LOGE(TAG, "Invalid parameters for global restoration");
@@ -500,7 +513,10 @@ int wasm_restore_global(const WASMModuleInstance *module,
         heap_caps_free(buffer);
     }
 
-    ESP_LOGI(TAG, "Global restoration %s", success ? "succeeded" : "failed");
+    uint64_t global_restore_time = end_measurement(&global_metrics);
+    ESP_LOGI(TAG, "restore global: %llu [ms]", global_restore_time/1000);
+
+    // ESP_LOGI(TAG, "Global restoration %s", success ? "succeeded" : "failed");
     return success ? 0 : -1;
 }
 
@@ -508,6 +524,8 @@ int wasm_restore_global(const WASMModuleInstance *module,
 
 int wasm_restore_program_counter(WASMModuleInstance *module, uint8 **frame_ip) {
     ESP_LOGI(TAG, "Starting program counter restoration");
+    struct TimeMetrics pc_metrics;
+    start_measurement(&pc_metrics);
 
     if (!module || !frame_ip) {
         ESP_LOGE(TAG, "Invalid parameters for program counter restoration");
@@ -578,7 +596,11 @@ int wasm_restore_program_counter(WASMModuleInstance *module, uint8 **frame_ip) {
     }
 
     *frame_ip = target_ip;
-    ESP_LOGI(TAG, "Program counter restored to %p (offset: %d)", target_ip, offset);
+    // ESP_LOGI(TAG, "Program counter restored to %p (offset: %d)", target_ip, offset);
+
+    uint64_t pc_restore_time = end_measurement(&pc_metrics);
+    ESP_LOGI(TAG, "restored program_counter: %llu [ms]", pc_restore_time/1000);
+
     return 0;
 }
 

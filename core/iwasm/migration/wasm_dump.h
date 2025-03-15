@@ -11,6 +11,7 @@ extern "C" {
 // チェックポイント制御
 void wasm_set_checkpoint(bool f);
 bool wasm_get_checkpoint();
+void wasm_print_checkpoint_latency();
 
 // メインダンプ機能
 int wasm_dump(WASMExecEnv *exec_env,

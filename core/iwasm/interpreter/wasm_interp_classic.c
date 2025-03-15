@@ -1404,6 +1404,7 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
 
 #define DO_CHECKPOINT()                                                     \
     do {                                                                    \
+        wasm_print_checkpoint_latency();                                    \
         SYNC_ALL_TO_FRAME();                                                \
         uint8 *dummy_ip;                                                    \
         uint32 *dummy_sp;                                                   \
