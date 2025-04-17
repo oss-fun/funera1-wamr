@@ -106,7 +106,7 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
 
     // 値スタックの中身
     WASMFunctionInstance *func = frame->function;
-    uint32 local_size = func->param_cell_num + func->local_cell_num;
+    uint32 local_size = func->param_count + func->local_count;
     uint32 value_stack_size = frame->sp - frame->sp_bottom;
     Array32 locals = {
         .size = local_size,
@@ -144,7 +144,7 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
     // dump stack
     uint32 entry_fidx = frame->function - module->e->functions;
     bool is_top = (bool)(call_stack_id == 1);
-    checkpoint_stack(call_stack_id, entry_fidx, &ret_addr, &cur_addr, &locals, &value_stack, &labels, is_top);
+    checkpoint_stack(call_stack_id, entry_fidx, &cur_addr, &ret_addr, &locals, &value_stack, &labels, is_top);
 }
 
 
