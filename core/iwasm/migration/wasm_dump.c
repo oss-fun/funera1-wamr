@@ -86,23 +86,24 @@ int debug_function_opcodes(WASMModuleInstance *module, WASMFunctionInstance* fun
 
 /* wasm_dump */
 static void
-_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_stack_id)
+_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_stack_id, BaseCallStackEntry *entry)
 {
     int i;
     WASMModuleInstance *module = exec_env->module_inst;
 
     // リターンアドレス
     // NOTE: 1番下のframeのときだけ、prev_frameではなくframeのリターンアドレスを出力する
-    WASMInterpFrame* prev_frame = (frame->prev_frame->function ? frame->prev_frame : frame);
-    CodePos ret_addr;
-    ret_addr.fidx = prev_frame->function - module->e->functions;
-    ret_addr.offset = prev_frame->ip - wasm_get_func_code(prev_frame->function);
+    // WASMInterpFrame* prev_frame = (frame->prev_frame->function ? frame->prev_frame : frame);
+    // CodePos ret_addr;
+    // ret_addr.fidx = prev_frame->function - module->e->functions;
+    // ret_addr.offset = prev_frame->ip - wasm_get_func_code(prev_frame->function);
 
     // 型スタックの中身
     uint32 type_stack_size_from_file;
     CodePos cur_addr;
     cur_addr.fidx = frame->function - module->e->functions;
     cur_addr.offset = frame->ip - wasm_get_func_code(frame->function);
+    printf("cur_addr.fidx: %d, cur_addr.offset: %d\n", cur_addr.fidx, cur_addr.offset);
 
     // 値スタックの中身
     WASMFunctionInstance *func = frame->function;
@@ -144,7 +145,11 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
     // dump stack
     uint32 entry_fidx = frame->function - module->e->functions;
     bool is_top = (bool)(call_stack_id == 1);
-    checkpoint_stack(call_stack_id, entry_fidx, &cur_addr, &ret_addr, &locals, &value_stack, &labels, is_top);
+
+    entry->pc = cur_addr;
+    entry->locals = locals;
+    entry->value_stack = value_stack;
+    entry->label_stack = labels;
 }
 
 
@@ -154,17 +159,27 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
     WASMModuleInstance *module =
         (WASMModuleInstance *)exec_env->module_inst;
 
+    // Call Stackのサイズを取得
+    int call_stack_size = 0;
+    struct WASMInterpFrame *cur_frame = frame;
+    do {
+        if (cur_frame->function == NULL) break;
+        call_stack_size++;
+    } while(cur_frame = cur_frame->prev_frame);
+
     // frameをtopからbottomまで走査する
     int i = 0;
-    do {
-        // dummy framenならbreak
-        if (frame->function == NULL) break;
-        ++i;
-        _dump_stack(exec_env, frame, i);
-    } while(frame = frame->prev_frame);
+    BaseCallStackEntry entries[call_stack_size];
+    cur_frame = frame;
+    for (int i = 0; i < call_stack_size; i++) {
+        // dump_stackは上から順に呼ばれるので、entryは下から順に格納する
+        
+        _dump_stack(exec_env, cur_frame, i, &entries[call_stack_size-i-1]);
+        cur_frame = cur_frame->prev_frame;
+    };
 
     // frame stackのサイズを保存
-    checkpoint_call_stack_size(i);
+    checkpoint_stack_v3(call_stack_size, entries);
 
     return 0;
 }

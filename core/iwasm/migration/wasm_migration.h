@@ -31,7 +31,7 @@ set_addr_offset(void* base, uint32 offset)
     else return base + offset;
 }
 
-static FILE* open_image(const char* file, const char* flag) {
+static FILE* wamr_open_image(const char* file, const char* flag) {
     FILE *fp = fopen(file, flag);
     if (fp == NULL) {
         fprintf(stderr, "failed to open %s\n", file);

@@ -1299,6 +1299,10 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
 
         frame_lp = frame->lp;
         UPDATE_ALL_FROM_FRAME();
+        // debugのため、restoreした瞬間checkpoint
+        sig_flag = 1;
+        goto migration_async;
+
         FETCH_OPCODE_AND_DISPATCH();
     }
 
@@ -1309,6 +1313,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
 #else
 migration_async:
     if (sig_flag) {
+        printf("checkpointing...\n");
         SYNC_ALL_TO_FRAME();
         uint8 *dummy_ip, *dummy_sp;
         dummy_ip = frame_ip;
@@ -1332,7 +1337,12 @@ migration_async:
                 goto got_exception;
             }
 
-            HANDLE_OP(WASM_OP_NOP) { HANDLE_OP_END(); }
+            HANDLE_OP(WASM_OP_NOP) { 
+                // NOPでチェックポイント
+                sig_flag = 1;
+                goto migration_async;
+                HANDLE_OP_END(); 
+            }
 
             HANDLE_OP(EXT_OP_BLOCK)
             {
