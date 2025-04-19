@@ -1440,7 +1440,7 @@ int get_env_int(const char *env_var, int default_value) {
     return (int)val;
 }
 static int dispatch_count = 0;
-int ckpt_point;
+int ckpt_point = -1;
 #define CHECK_DUMP()                                                        \
     dispatch_count++;                                                       \
     if (wasm_get_checkpoint() || dispatch_count == ckpt_point) {            \
@@ -1673,6 +1673,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
         linear_mem_size = memory ? memory->memory_data_size : 0;
 
         frame_lp = frame->lp;
+        wasm_set_checkpoint(false);
         UPDATE_ALL_FROM_FRAME();
         FETCH_OPCODE_AND_DISPATCH();
     }
@@ -1691,7 +1692,14 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
                 goto got_exception;
             }
 
-            HANDLE_OP(WASM_OP_NOP) { HANDLE_OP_END(); }
+            HANDLE_OP(WASM_OP_NOP) { 
+                // NOPでチェックポイント
+                bool is_nop_checkpoint = getenv("NOP_CKPT");
+                if (is_nop_checkpoint) {
+                    wasm_set_checkpoint(true);
+                }
+                HANDLE_OP_END(); 
+            }
 
 #if WASM_ENABLE_EXCE_HANDLING != 0
             HANDLE_OP(WASM_OP_RETHROW)
