@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <wasmig/migration.h>
+#include <wasmig/log.h>
 
 #include "../interpreter/wasm_runtime.h"
 #include "wasm_migration.h"
@@ -120,10 +121,14 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
 
     // ラベルスタックの中身
     uint32 ctrl_stack_size = frame->csp - frame->csp_bottom;
-    uint32_t begins[ctrl_stack_size];
-    uint32_t targets[ctrl_stack_size];
-    uint32_t stack_pointers[ctrl_stack_size];
-    uint32_t cell_nums[ctrl_stack_size];
+    uint32_t* begins = (uint32_t *)malloc(ctrl_stack_size * sizeof(uint32_t));
+    uint32_t* targets = (uint32_t *)malloc(ctrl_stack_size * sizeof(uint32_t));
+    uint32_t* stack_pointers = (uint32_t *)malloc(ctrl_stack_size * sizeof(uint32_t));
+    uint32_t* cell_nums = (uint32_t *)malloc(ctrl_stack_size * sizeof(uint32_t));
+    // uint32_t begins[ctrl_stack_size];
+    // uint32_t targets[ctrl_stack_size];
+    // uint32_t stack_pointers[ctrl_stack_size];
+    // uint32_t cell_nums[ctrl_stack_size];
 
     WASMBranchBlock *csp = frame->csp_bottom;
     uint32 addr;
@@ -156,6 +161,7 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
 int
 wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
 {
+    wasmig_log_init(1);
     WASMModuleInstance *module =
         (WASMModuleInstance *)exec_env->module_inst;
 
@@ -180,6 +186,7 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
 
     // frame stackのサイズを保存
     checkpoint_stack_v3(call_stack_size, entries);
+    wasmig_info("Success to dump frame stack\n");
 
     return 0;
 }

@@ -198,11 +198,13 @@ _restore_stack(WASMExecEnv *exec_env, WASMInterpFrame *frame, CallStackEntry *en
 
     // 値スタックの中身
     uint32 local_cell_num = func->param_cell_num + func->local_cell_num;
-    memcpy(frame->lp, entry->locals.values.contents, entry->locals.values.size);
+    printf("local_cell_num: %d\n", local_cell_num);
+    printf("locals.values.size: %d\n", entry->locals.values.size);
+    memcpy(frame->lp, entry->locals.values.contents, entry->locals.values.size * sizeof(uint32_t));
     // fread(frame->lp, sizeof(uint32), local_cell_num, fp);
     // debug_local(frame);
     // fread(frame->sp_bottom, sizeof(uint32), value_stack_size, fp);
-    memcpy(frame->sp_bottom, entry->value_stack.values.contents, entry->value_stack.values.size);
+    memcpy(frame->sp_bottom, entry->value_stack.values.contents, entry->value_stack.values.size * sizeof(uint32_t));
     wasmig_info("restore value stack");
 
 
@@ -232,17 +234,10 @@ _restore_stack(WASMExecEnv *exec_env, WASMInterpFrame *frame, CallStackEntry *en
         offset = entry->label_stack.stack_pointers[i];
         csp->frame_sp = set_addr_offset(frame->sp_bottom, offset);
 
-        // uint32 *frame_tsp
-        // fread(&offset, sizeof(uint32), 1, fp);
-        // csp->frame_tsp = set_addr_offset(frame->tsp_bottom, offset);
-
         // uint32 cell_num;
         offset = entry->label_stack.cell_nums[i];
         csp->cell_num = offset;
         // fread(&csp->cell_num, sizeof(uint32), 1, fp);
-
-        // uint32 count;
-        // fread(&csp->count, sizeof(uint32), 1, fp);
     }
     wasmig_info("restore label stack");
 }
@@ -263,6 +258,7 @@ wasm_restore_stack(WASMExecEnv **_exec_env)
     
     CallStack cs = restore_stack();
     wasmig_debug("restore_stack: cs.size: %d\n", cs.size);
+    print_call_stack(&cs);
 
     // uint32 frame_stack_size;
     // fp = open_image("frame.img", "rb");
@@ -271,7 +267,6 @@ wasm_restore_stack(WASMExecEnv **_exec_env)
 
     // char file[32];
     // uint32 fidx = 0;
-    // 上から順に復元
     for (int i = 0; i < cs.size; i++) {
         CallStackEntry *entry = &cs.entries[i];
         function = module_inst->e->functions + entry->pc.fidx;

@@ -20,8 +20,11 @@ get_global_addr_for_migration(uint8 *global_data, WASMGlobalInstance *global)
 static uint32
 get_addr_offset(void* target, void* base)
 {
-    if (target == NULL) return -1;
-    else return target - base;
+    uint32_t ret;
+    if (target == NULL) ret = -1;
+    else ret = target - base;
+    printf("target = %ld, base = %ld, ret = %ld\n", target, base, ret);
+    return ret;
 }
 
 static void*

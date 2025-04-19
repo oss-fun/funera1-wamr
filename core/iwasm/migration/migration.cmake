@@ -8,7 +8,8 @@ include(FetchContent)
 FetchContent_Declare(
     wasmig
     GIT_REPOSITORY https://github.com/funera1/wasmig.git
-    GIT_TAG HEAD
+    GIT_TAG main
+    GIT_SHALLOW TRUE
     # GIT_TAG cce6121b09b5def323102b2b36142cec677c1638
 )
 FetchContent_GetProperties(wasmig)
