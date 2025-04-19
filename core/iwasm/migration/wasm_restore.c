@@ -149,7 +149,10 @@ _restore_stack(WASMExecEnv *exec_env, WASMInterpFrame *frame, CallStackEntry *en
 {
     WASMModuleInstance *module_inst = exec_env->module_inst;
     WASMFunctionInstance *func = frame->function;
-    frame->ip = wasm_get_func_code(frame->function) + entry->pc.offset;
+    // NOTE: WAMRはtop以外のフレームでは、call命令の次の命令にipが設定されているので、checkpointではcall命令を指すpcを保存した。
+    // restore時は、Callの次の命令を指すように修正する
+    CodePos ret_pos = next_pc(entry->pc);
+    frame->ip = wasm_get_func_code(frame->function) + ret_pos.offset;
     printf("restore ip: (%d, %d)\n", entry->pc.fidx, entry->pc.offset);
 
     // 初期化
@@ -192,7 +195,7 @@ _restore_stack(WASMExecEnv *exec_env, WASMInterpFrame *frame, CallStackEntry *en
     // for (uint32 i = 0; i < entry->locals.size; ++i) {
     //     value_stack_size += type_stack[i];
     // }
-    uint32 stack_size = entry->locals.values.size + entry->value_stack.values.size;
+    uint32 stack_size = entry->value_stack.values.size;
     frame->sp = frame->sp_bottom + stack_size;
     wasmig_info("restore sp");
 
@@ -283,8 +286,6 @@ wasm_restore_stack(WASMExecEnv **_exec_env)
                             (WASMInterpFrame *)prev_frame);
 
         // フレームをrestore
-        wasmig_info("(call stack id, (fidx, offset)): ({}, ({}, {}))", 
-            i, entry->pc.fidx, entry->pc.offset);
         frame->function = function;
         _restore_stack(exec_env, frame, entry);
 
@@ -319,16 +320,36 @@ void restore_dirty_memory(WASMMemoryInstance **memory, FILE* memory_fp) {
     }
 }
 
+// int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory, uint8** maddr) {
+//     Array8 mem = restore_memory();
+
+//     // restore page_count
+//     uint32 page_count = mem.size / (*memory)->num_bytes_per_page;
+//     printf("page_count: %d\n", page_count);
+//     wasm_enlarge_memory(module, page_count- (*memory)->cur_page_count);
+//     *maddr = page_count * (*memory)->num_bytes_per_page;
+
+//     // restore data
+//     memcpy((*memory)->memory_data, mem.contents, mem.size);
+//     return 0;
+// }
 int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory, uint8** maddr) {
-    Array8 mem = restore_memory();
+    FILE* memory_fp = wamr_open_image("memory.img", "rb");
+    FILE* mem_size_fp = wamr_open_image("mem_page_count.img", "rb");
 
     // restore page_count
-    uint32 page_count = mem.size / (*memory)->num_bytes_per_page;
+    uint32 page_count;
+    fread(&page_count, sizeof(uint32), 1, mem_size_fp);
     wasm_enlarge_memory(module, page_count- (*memory)->cur_page_count);
     *maddr = page_count * (*memory)->num_bytes_per_page;
 
-    // restore data
-    memcpy((*memory)->memory_data, mem.contents, mem.size);
+    // restore_dirty_memory(memory, memory_fp);
+    // restore memory_data
+    fread((*memory)->memory_data, sizeof(uint8),
+            (*memory)->num_bytes_per_page * (*memory)->cur_page_count, memory_fp);
+
+    fclose(memory_fp);
+    fclose(mem_size_fp);
     return 0;
 }
 

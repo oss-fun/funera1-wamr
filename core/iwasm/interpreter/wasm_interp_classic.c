@@ -1096,9 +1096,27 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
 
 #define HANDLE_OP(opcode) HANDLE_##opcode:
 
+#define DO_CHECKPOINT()                                                     \
+    do {                                                                    \
+        SYNC_ALL_TO_FRAME();                                                \
+        uint8 *dummy_ip;                                                    \
+        uint32 *dummy_sp;                                                   \
+        dummy_ip = frame_ip;                                                \
+        dummy_sp = frame_sp;                                                \
+        int rc = wasm_dump(exec_env, module, memory,                        \
+            globals, global_data, cur_func,                                 \
+            frame, dummy_ip);                                               \
+        if (rc < 0) {                                                       \
+            perror("failed to dump\n");                                     \
+            exit(1);                                                        \
+        }                                                                   \
+        LOG_DEBUG("dispatch_count: %d\n", dispatch_count);                  \
+        exit(0);                                                            \
+    } while(0)                                                              
+
 #define CHECK_DUMP()                                                        \
     if (sig_flag) {                                                         \
-        goto migration_async;                                               \
+        DO_CHECKPOINT();                                                    \
     }
 
 // #define FETCH_OPCODE_AND_DISPATCH() goto *handle_table[*frame_ip++]
@@ -1339,8 +1357,10 @@ migration_async:
 
             HANDLE_OP(WASM_OP_NOP) { 
                 // NOPでチェックポイント
-                sig_flag = 1;
-                goto migration_async;
+                bool is_nop_checkpoint = getenv("NOP_CKPT");
+                if (is_nop_checkpoint) {
+                    sig_flag = 1;
+                }
                 HANDLE_OP_END(); 
             }
 

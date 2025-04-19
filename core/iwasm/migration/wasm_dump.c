@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <wasmig/migration.h>
+#include <wasmig/stack_tables.h>
 #include <wasmig/log.h>
 
 #include "../interpreter/wasm_runtime.h"
@@ -87,7 +88,7 @@ int debug_function_opcodes(WASMModuleInstance *module, WASMFunctionInstance* fun
 
 /* wasm_dump */
 static void
-_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_stack_id, BaseCallStackEntry *entry)
+_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_stack_id, BaseCallStackEntry *entry, bool is_stack_top)
 {
     int i;
     WASMModuleInstance *module = exec_env->module_inst;
@@ -104,12 +105,23 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
     CodePos cur_addr;
     cur_addr.fidx = frame->function - module->e->functions;
     cur_addr.offset = frame->ip - wasm_get_func_code(frame->function);
-    printf("cur_addr.fidx: %d, cur_addr.offset: %d\n", cur_addr.fidx, cur_addr.offset);
+    // NOTE: WAMRはtop以外のフレームでは、call命令の次の命令にipが設定されているので、call命令を指すように戻す。
+    // restore時は、Callの次の命令を指すように修正する
+    CodePos call_pos = prev_pc(cur_addr);
+    printf("call_pos = (%d, %d)\n", cur_addr.fidx, cur_addr.offset);
 
     // 値スタックの中身
     WASMFunctionInstance *func = frame->function;
-    uint32 local_size = func->param_count + func->local_count;
-    uint32 value_stack_size = frame->sp - frame->sp_bottom;
+    uint32 local_size = func->param_cell_num + func->local_cell_num;
+
+    StackTable stack_table = get_stack_table(call_pos.fidx, call_pos.offset);
+    uint32 value_stack_size = get_stack_size(stack_table);
+    // コールスタックのトップ以外は引数・返り値の処理が必要
+    if (!is_stack_top) {
+        uint32_t result_size = get_result_size(stack_table);    
+        value_stack_size -= result_size;
+    }
+
     Array32 locals = {
         .size = local_size,
         .contents = frame->lp,
@@ -151,7 +163,7 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
     uint32 entry_fidx = frame->function - module->e->functions;
     bool is_top = (bool)(call_stack_id == 1);
 
-    entry->pc = cur_addr;
+    entry->pc = call_pos;
     entry->locals = locals;
     entry->value_stack = value_stack;
     entry->label_stack = labels;
@@ -180,7 +192,7 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
     for (int i = 0; i < call_stack_size; i++) {
         // dump_stackは上から順に呼ばれるので、entryは下から順に格納する
         
-        _dump_stack(exec_env, cur_frame, i, &entries[call_stack_size-i-1]);
+        _dump_stack(exec_env, cur_frame, i, &entries[call_stack_size-i-1], (i == call_stack_size-1));
         cur_frame = cur_frame->prev_frame;
     };
 
@@ -192,25 +204,73 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
 }
 
 
+// int wasm_dump_memory(WASMMemoryInstance *memory) {
+//     checkpoint_memory(memory->memory_data, memory->cur_page_count);
+// }
 int wasm_dump_memory(WASMMemoryInstance *memory) {
-    checkpoint_memory(memory->memory_data, memory->cur_page_count);
+    FILE *mem_size_fp = wamr_open_image("mem_page_count.img", "wb");
+
+    // dump_dirty_memory(memory);
+
+    printf("page_count: %d\n", memory->cur_page_count);
+    fwrite(&(memory->cur_page_count), sizeof(uint32), 1, mem_size_fp);
+
+    fclose(mem_size_fp);
+
+    // デバッグのために、すべてのメモリも保存
+    FILE *all_memory_fp = wamr_open_image("all_memory.img", "wb");
+    fwrite(memory->memory_data, sizeof(uint8),
+           memory->num_bytes_per_page * memory->cur_page_count, all_memory_fp);
+    fclose(all_memory_fp);
+    return 0;
 }
 
+// int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, uint8* global_data) {
+//     uint64_t values[module->e->global_count];
+//     uint32_t types[module->e->global_count];
+//     uint8 *global_addr;
+//     for (int i = 0; i < module->e->global_count; i++) {
+//         switch (globals[i].type) {
+//             case VALUE_TYPE_I32:
+//             case VALUE_TYPE_F32:
+//                 values[i] = *get_global_addr_for_migration(global_data, (globals+i));
+//                 types[i] = sizeof(uint32);
+//                 break;
+//             case VALUE_TYPE_I64:
+//             case VALUE_TYPE_F64:
+//                 values[i] = *get_global_addr_for_migration(global_data, (globals+i));
+//                 types[i] = sizeof(uint64);
+//                 break;
+//             default:
+//                 printf("type error:B\n");
+//                 break;
+//         }
+//     }
+
+//     checkpoint_global(values, types, module->e->global_count);
+// }
 int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, uint8* global_data) {
-    uint64_t values[module->e->global_count];
-    uint32_t types[module->e->global_count];
+    FILE *fp;
+    const char *file = "global.img";
+    fp = fopen(file, "wb");
+    if (fp == NULL) {
+        fprintf(stderr, "failed to open %s\n", file);
+        return -1;
+    }
+
+    // WASMMemoryInstance *memory = module->default_memory;
     uint8 *global_addr;
     for (int i = 0; i < module->e->global_count; i++) {
         switch (globals[i].type) {
             case VALUE_TYPE_I32:
             case VALUE_TYPE_F32:
-                values[i] = *get_global_addr_for_migration(global_data, (globals+i));
-                types[i] = sizeof(uint32);
+                global_addr = get_global_addr_for_migration(global_data, (globals+i));
+                fwrite(global_addr, sizeof(uint32), 1, fp);
                 break;
             case VALUE_TYPE_I64:
             case VALUE_TYPE_F64:
-                values[i] = *get_global_addr_for_migration(global_data, (globals+i));
-                types[i] = sizeof(uint64);
+                global_addr = get_global_addr_for_migration(global_data, (globals+i));
+                fwrite(global_addr, sizeof(uint64), 1, fp);
                 break;
             default:
                 printf("type error:B\n");
@@ -218,7 +278,8 @@ int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, ui
         }
     }
 
-    checkpoint_global(values, types, module->e->global_count);
+    fclose(fp);
+    return 0;
 }
 
 int wasm_dump_program_counter(
