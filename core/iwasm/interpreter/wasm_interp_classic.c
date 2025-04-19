@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
 
+#include <time.h>
+
 #include "wasm_interp.h"
 #include "bh_log.h"
 #include "wasm_runtime.h"
@@ -17,6 +19,8 @@
 #include "string_object.h"
 #endif
 #endif
+#include "../migration/wasm_dump.h"
+#include "../migration/wasm_restore.h"
 #if WASM_ENABLE_SHARED_MEMORY != 0
 #include "../common/wasm_shared_memory.h"
 #endif
@@ -1396,7 +1400,36 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
 #if WASM_ENABLE_LABELS_AS_VALUES != 0
 
 #define HANDLE_OP(opcode) HANDLE_##opcode:
-#define FETCH_OPCODE_AND_DISPATCH() goto *handle_table[*frame_ip++]
+
+#define DO_CHECKPOINT()                                                     \
+    do {                                                                    \
+        SYNC_ALL_TO_FRAME();                                                \
+        uint8 *dummy_ip;                                                    \
+        uint32 *dummy_sp;                                                   \
+        dummy_ip = frame_ip;                                                \
+        dummy_sp = frame_sp;                                                \
+        int rc = wasm_dump(exec_env, module, memory,                        \
+            globals, global_data, cur_func,                                 \
+            frame, dummy_ip);                                               \
+        if (rc < 0) {                                                       \
+            perror("failed to dump\n");                                     \
+            exit(1);                                                        \
+        }                                                                   \
+        LOG_DEBUG("dispatch_count: %d\n", dispatch_count);                  \
+        exit(0);                                                            \
+    } while(0)                                                              
+
+#define CHECK_DUMP()                                                        \
+    if (sig_flag) {                                                         \
+        DO_CHECKPOINT();                                                    \
+    }
+
+// #define FETCH_OPCODE_AND_DISPATCH() goto *handle_table[*frame_ip++]
+#define FETCH_OPCODE_AND_DISPATCH()                                     \
+do {                                                                    \
+    CHECK_DUMP()                                                        \
+    goto *handle_table[*frame_ip++];                                    \
+} while(0);
 
 #if WASM_ENABLE_THREAD_MGR != 0 && WASM_ENABLE_DEBUG_INTERP != 0
 #define HANDLE_OP_END()                                                   \
@@ -1412,6 +1445,7 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
             wasm_cluster_thread_waiting_run(exec_env);                    \
         }                                                                 \
         os_mutex_unlock(&exec_env->wait_lock);                            \
+        CHECK_DUMP();                                                     \
         goto *handle_table[*frame_ip++];                                  \
     } while (0)
 #else
@@ -1448,6 +1482,26 @@ get_global_addr(uint8 *global_data, WASMGlobalInstance *global)
                      + global->import_global_inst->data_offset
                : global_data + global->data_offset;
 #endif
+}
+
+static void clear_refs() {
+    int fd;
+    char *v = "4";
+
+    fd = open("/proc/self/clear_refs", O_WRONLY);
+    if (write(fd, v, 3) < 3) {
+        perror("Can't clear soft-dirty bit");
+    }
+    close(fd);
+}
+
+static bool sig_flag = false;
+static void (*native_handler)(void) = NULL;
+bool done_flag = false;
+void
+wasm_interp_sigint(int signum)
+{
+    sig_flag = true;
 }
 
 static void
@@ -1547,11 +1601,88 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
 #undef HANDLE_OPCODE
 #endif
 
+    signal(SIGINT, &wasm_interp_sigint);
+    // Clear soft-dirty bit
+    clear_refs();
+
+    // リストアの初期化時間の計測(終了)
+    struct timespec ts1;
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
+    fprintf(stderr, "boot_end, %lu\n", (uint64_t)(ts1.tv_sec*1e9) + ts1.tv_nsec);
+
+    if (get_restore_flag()) {
+        // bool done_flag;
+        int rc;
+        struct timespec ts1, ts2;
+
+        clock_gettime(CLOCK_MONOTONIC, &ts1);
+        frame = wasm_restore_stack(&exec_env);
+        clock_gettime(CLOCK_MONOTONIC, &ts2);
+        fprintf(stderr, "stack, %lu\n", get_time(ts1, ts2));
+        if (frame == NULL) {
+            perror("Error:wasm_interp_func_bytecode:frame is NULL\n");
+            return;
+        }
+        // debug_wasm_interp_frame(frame, module->e->functions);
+
+        cur_func = frame->function;
+        prev_frame = frame->prev_frame;
+        if (cur_func == NULL) {
+            perror("Error:wasm_interp_func_bytecode:cur_func is null\n");
+            return;
+        }
+        if (prev_frame == NULL) {
+            perror("Error:wasm_interp_func_bytecode:prev_frame is null\n");
+            return;
+        }
+
+        uint8 *dummy_ip, *dummy_lp, *dummy_sp;
+        rc = wasm_restore(&module, &exec_env, &cur_func, &prev_frame,
+                        &memory, &globals, &global_data, &global_addr,
+                        &frame, &dummy_ip, &dummy_lp, &dummy_sp, &frame_csp,
+                        &frame_ip_end, &else_addr, &end_addr, &maddr, &done_flag);
+        if (rc < 0) {
+            // error
+            perror("failed to restore\n");
+            return;
+        }
+        frame_ip = dummy_ip;
+        frame_lp = dummy_lp;
+        frame_sp = dummy_sp;
+        frame->ip = frame_ip;
+        linear_mem_size = memory ? memory->memory_data_size : 0;
+
+        frame_lp = frame->lp;
+        UPDATE_ALL_FROM_FRAME();
+        // debugのため、restoreした瞬間checkpoint
+        // sig_flag = 1;
+        // goto migration_async;
+
+        FETCH_OPCODE_AND_DISPATCH();
+    }
+
 #if WASM_ENABLE_LABELS_AS_VALUES == 0
     while (frame_ip < frame_ip_end) {
         opcode = *frame_ip++;
         switch (opcode) {
 #else
+migration_async:
+    if (sig_flag) {
+        printf("checkpointing...\n");
+        SYNC_ALL_TO_FRAME();
+        uint8 *dummy_ip, *dummy_sp;
+        dummy_ip = frame_ip;
+        dummy_sp = frame_sp;
+        int rc = wasm_dump(exec_env, module, memory, 
+            globals, global_data, cur_func,
+            frame, dummy_ip);
+        if (rc < 0) {
+            perror("failed to dump\n");
+            exit(1);
+        }
+        LOG_DEBUG("dispatch_count: %d\n", dispatch_count);
+        exit(0);     
+    }
     FETCH_OPCODE_AND_DISPATCH();
 #endif
             /* control instructions */
@@ -1561,7 +1692,14 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
                 goto got_exception;
             }
 
-            HANDLE_OP(WASM_OP_NOP) { HANDLE_OP_END(); }
+            HANDLE_OP(WASM_OP_NOP) { 
+                // NOPでチェックポイント
+                bool is_nop_checkpoint = getenv("NOP_CKPT");
+                if (is_nop_checkpoint) {
+                    sig_flag = 1;
+                }
+                HANDLE_OP_END(); 
+            }
 
 #if WASM_ENABLE_EXCE_HANDLING != 0
             HANDLE_OP(WASM_OP_RETHROW)

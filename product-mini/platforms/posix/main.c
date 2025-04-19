@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "bh_platform.h"
 #include "bh_read_file.h"
@@ -106,6 +107,7 @@ print_help()
 #if WASM_ENABLE_STATIC_PGO != 0
     printf("  --gen-prof-file=<path>   Generate LLVM PGO (Profile-Guided Optimization) profile file\n");
 #endif
+    printf("  --restore                Restore from frame.img and interp.img\n");
     printf("  --version                Show version information\n");
     return 1;
 }
@@ -560,12 +562,18 @@ timeout_thread(void *vp)
 int
 main(int argc, char *argv[])
 {
+    // リストアの初期化時間の計測(開始)
+    struct timespec ts1;
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
+    fprintf(stderr, "boot_start, %lu\n", (uint64_t)(ts1.tv_sec*1e9) + ts1.tv_nsec);
+
     int32 ret = -1;
     char *wasm_file = NULL;
     const char *func_name = NULL;
     uint8 *wasm_file_buf = NULL;
     uint32 wasm_file_size;
     uint32 stack_size = 64 * 1024;
+    bool restore_flag = false;
 #if WASM_ENABLE_LIBC_WASI != 0
     uint32 heap_size = 0;
 #else
@@ -792,7 +800,10 @@ main(int argc, char *argv[])
             gen_prof_file = argv[0] + 16;
         }
 #endif
-        else if (!strcmp(argv[0], "--version")) {
+        else if (!strncmp(argv[0], "--restore", 9)) {
+           restore_flag = true;
+        }
+        else if (!strncmp(argv[0], "--version", 9)) {
             uint32 major, minor, patch;
             wasm_runtime_get_version(&major, &minor, &patch);
             printf("iwasm %" PRIu32 ".%" PRIu32 ".%" PRIu32 "\n", major, minor,
@@ -827,6 +838,7 @@ main(int argc, char *argv[])
     memset(&init_args, 0, sizeof(RuntimeInitArgs));
 
     init_args.running_mode = running_mode;
+    init_args.restore_flag = restore_flag;
 #if WASM_ENABLE_GLOBAL_HEAP_POOL != 0
     init_args.mem_alloc_type = Alloc_With_Pool;
     init_args.mem_alloc_option.pool.heap_buf = global_heap_buf;

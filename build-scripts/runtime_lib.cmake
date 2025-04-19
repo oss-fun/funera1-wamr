@@ -130,6 +130,11 @@ if (WAMR_BUILD_DEBUG_INTERP EQUAL 1)
     endif ()
 endif ()
 
+set (WAMR_BUILD_MIGRATION 1)
+if (WAMR_BUILD_MIGRATION EQUAL 1)
+    include (${IWASM_DIR}/migration/migration.cmake)
+endif()
+
 if (WAMR_BUILD_THREAD_MGR EQUAL 1)
     include (${IWASM_DIR}/libraries/thread-mgr/thread_mgr.cmake)
 endif ()
@@ -193,6 +198,7 @@ set (source_all
     ${LIBC_EMCC_SOURCE}
     ${LIB_RATS_SOURCE}
     ${DEBUG_ENGINE_SOURCE}
+    ${MIGRATION_SOURCE}
 )
 
 set (WAMR_RUNTIME_LIB_SOURCE ${source_all})

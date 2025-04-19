@@ -38,6 +38,7 @@
 #include "../compilation/aot_llvm.h"
 #endif
 #include "../common/wasm_c_api_internal.h"
+#include "../migration/wasm_restore.h"
 #include "../../version.h"
 
 /**
@@ -775,6 +776,10 @@ wasm_runtime_full_init_internal(RuntimeInitArgs *init_args)
                                           init_args->n_native_symbols)) {
         wasm_runtime_destroy();
         return false;
+    }
+
+    if (init_args->restore_flag) {
+        set_restore_flag(true);
     }
 
 #if WASM_ENABLE_THREAD_MGR != 0

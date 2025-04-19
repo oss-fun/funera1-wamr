@@ -218,6 +218,8 @@ typedef struct RuntimeInitArgs {
     uint32_t llvm_jit_size_level;
     /* Segue optimization flags for LLVM JIT */
     uint32_t segue_flags;
+    /* Restore from interp.img and frame.img */
+    bool restore_flag;
     /**
      * If enabled
      * - llvm-jit will output a jitdump file for `perf inject`
