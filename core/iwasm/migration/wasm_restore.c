@@ -328,7 +328,7 @@ int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory,
     *maddr = page_count * (*memory)->num_bytes_per_page;
 
     // restore data
-    (*memory)->memory_data = mem.contents;
+    memcpy((*memory)->memory_data, mem.contents, mem.size);
     return 0;
 }
 
