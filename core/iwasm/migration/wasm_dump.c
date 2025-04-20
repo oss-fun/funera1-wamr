@@ -204,25 +204,8 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
 }
 
 
-// int wasm_dump_memory(WASMMemoryInstance *memory) {
-//     checkpoint_memory(memory->memory_data, memory->cur_page_count);
-// }
 int wasm_dump_memory(WASMMemoryInstance *memory) {
-    FILE *mem_size_fp = wamr_open_image("mem_page_count.img", "wb");
-
-    // dump_dirty_memory(memory);
-
-    printf("page_count: %d\n", memory->cur_page_count);
-    fwrite(&(memory->cur_page_count), sizeof(uint32), 1, mem_size_fp);
-
-    fclose(mem_size_fp);
-
-    // デバッグのために、すべてのメモリも保存
-    FILE *all_memory_fp = wamr_open_image("memory.img", "wb");
-    fwrite(memory->memory_data, sizeof(uint8),
-           memory->num_bytes_per_page * memory->cur_page_count, all_memory_fp);
-    fclose(all_memory_fp);
-    return 0;
+    checkpoint_memory(memory->memory_data, memory->cur_page_count);
 }
 
 // int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, uint8* global_data) {
