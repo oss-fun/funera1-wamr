@@ -32,7 +32,7 @@ get_addr_offset(void* target, void* base)
 static void*
 set_addr_offset(void* base, uint32 offset)
 {
-    if (offset == UINT32_MAX-1) return NULL;
+    if (offset == UINT32_MAX) return NULL;
     else return base + offset;
 }
 
