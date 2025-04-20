@@ -1410,9 +1410,8 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
         dummy_ip = frame_ip;                                                \
         dummy_sp = frame_sp;                                                \
         int rc = wasm_dump(exec_env, module, memory,                        \
-            globals, global_data, global_addr, cur_func,                    \
-            frame, dummy_ip, dummy_sp, frame_csp,                           \
-            frame_ip_end, else_addr, end_addr, maddr, done_flag);           \
+            globals, global_data, cur_func,                                 \
+            frame, dummy_ip);                                               \
         if (rc < 0) {                                                       \
             perror("failed to dump\n");                                     \
             exit(1);                                                        \
@@ -1421,29 +1420,8 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
         exit(0);                                                            \
     } while(0)                                                              
 
-
-int get_env_int(const char *env_var, int default_value) {
-    char *env_val = getenv(env_var);
-    if (!env_val) {
-        return default_value;  // 環境変数が未設定ならデフォルト値
-    }
-
-    char *endptr;
-    errno = 0;  // errno をリセット
-    long val = strtol(env_val, &endptr, 10);
-
-    // 変換エラー（未変換部分がある or 範囲外）
-    if (errno == ERANGE || val > INT_MAX || val < INT_MIN || *endptr != '\0') {
-        return default_value;
-    }
-
-    return (int)val;
-}
-static int dispatch_count = 0;
-int ckpt_point;
 #define CHECK_DUMP()                                                        \
-    dispatch_count++;                                                       \
-    if (wasm_get_checkpoint() || dispatch_count == ckpt_point) {            \
+    if (wasm_get_checkpoint()) {                                            \
         DO_CHECKPOINT();                                                    \
     }
 
@@ -1674,6 +1652,12 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
 
         frame_lp = frame->lp;
         UPDATE_ALL_FROM_FRAME();
+        // debugのため、restoreした瞬間checkpoint
+        bool is_restore_then_checkpoint = getenv("RESTORE_THEN_CKPT");
+        if (is_restore_then_checkpoint) {
+            sig_flag = 1;
+        }
+
         FETCH_OPCODE_AND_DISPATCH();
     }
 
@@ -1691,7 +1675,14 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
                 goto got_exception;
             }
 
-            HANDLE_OP(WASM_OP_NOP) { HANDLE_OP_END(); }
+            HANDLE_OP(WASM_OP_NOP) { 
+                // NOPでチェックポイント
+                bool is_nop_checkpoint = getenv("NOP_CKPT");
+                if (is_nop_checkpoint) {
+                    sig_flag = 1;
+                }
+                HANDLE_OP_END(); 
+            }
 
 #if WASM_ENABLE_EXCE_HANDLING != 0
             HANDLE_OP(WASM_OP_RETHROW)

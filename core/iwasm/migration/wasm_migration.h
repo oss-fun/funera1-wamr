@@ -22,8 +22,11 @@ get_global_addr_for_migration(uint8 *global_data, const WASMGlobalInstance *glob
 static uint32
 get_addr_offset(void* target, void* base)
 {
-    if (target == NULL) return -1;
-    else return target - base;
+    uint32_t ret;
+    if (target == NULL) ret = -1;
+    else ret = target - base;
+    // printf("target = %ld, base = %ld, ret = %ld\n", target, base, ret);
+    return ret;
 }
 
 static void*
@@ -33,7 +36,7 @@ set_addr_offset(void* base, uint32 offset)
     else return base + offset;
 }
 
-static FILE* open_image(const char* file, const char* flag) {
+static FILE* wamr_open_image(const char* file, const char* flag) {
     FILE *fp = fopen(file, flag);
     if (fp == NULL) {
         fprintf(stderr, "failed to open %s\n", file);
