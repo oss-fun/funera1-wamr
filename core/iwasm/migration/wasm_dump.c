@@ -203,21 +203,23 @@ int wasm_dump_memory(WASMMemoryInstance *memory) {
     return 0;
 }
 
+// TODO: for文の回数を減らす
+// NOTE: バグがある
 // int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, uint8* global_data) {
-//     uint64_t values[module->e->global_count];
-//     uint32_t types[module->e->global_count];
-//     uint8 *global_addr;
+//     // 型情報を詰める
+//     uint8_t types[module->e->global_count];
+//     size_t values_size = 0;
 //     for (int i = 0; i < module->e->global_count; i++) {
 //         switch (globals[i].type) {
 //             case VALUE_TYPE_I32:
 //             case VALUE_TYPE_F32:
-//                 values[i] = *get_global_addr_for_migration(global_data, (globals+i));
-//                 types[i] = sizeof(uint32);
+//                 types[i] = 1;
+//                 values_size += 1;
 //                 break;
 //             case VALUE_TYPE_I64:
 //             case VALUE_TYPE_F64:
-//                 values[i] = *get_global_addr_for_migration(global_data, (globals+i));
-//                 types[i] = sizeof(uint64);
+//                 types[i] = 2;
+//                 values_size += 2;
 //                 break;
 //             default:
 //                 printf("type error:B\n");
@@ -225,7 +227,61 @@ int wasm_dump_memory(WASMMemoryInstance *memory) {
 //         }
 //     }
 
-//     checkpoint_global(values, types, module->e->global_count);
+//     // 値を詰める
+//     uint32_t values[values_size];
+//     int iter = 0;
+//     uint8* global_addr;
+//     for (int i = 0; i < module->e->global_count; i++) {
+//         printf("values[%d] = ", i);
+//         switch (globals[i].type) {
+//             case VALUE_TYPE_I32:
+//             case VALUE_TYPE_F32:
+//                 global_addr = get_global_addr_for_migration(global_data, (globals+i));
+//                 values[iter++] = *(uint32 *)global_addr;
+//                 // memcpy(&values[iter], global_addr, sizeof(uint32));
+//                 // values[iter++] = *(uint32 *)global_addr;
+//                 // values[iter++] = *get_global_addr_for_migration(global_data, (globals+i));
+//                 break;
+//             case VALUE_TYPE_I64:
+//             case VALUE_TYPE_F64:
+//                 global_addr = get_global_addr_for_migration(global_data, (globals+i));
+//                 // memcpy(&values[iter++], global_addr, sizeof(uint32));
+//                 // memcpy(&values[iter++], global_addr+sizeof(uint32), sizeof(uint32));
+//                 uint32 high = *(uint32 *)global_addr;
+//                 uint32 low = *(uint32 *)(global_addr + sizeof(uint32));
+//                 values[iter++] = high;
+//                 values[iter++] = low;
+//                 // uint64 value = *(uint64 *)get_global_addr_for_migration(global_data, (globals+i));
+//                 // values[iter++] = (uint32)(value & 0xFFFFFFFF);
+//                 // values[iter++] = (uint32)(value >> 32);
+//                 break;
+//             default:
+//                 printf("type error:B\n");
+//                 break;
+//         }
+//     }
+//     if (iter > values_size) {
+//         printf("iter > values_size\n");
+//         return -1;
+//     }
+    
+//     Array8 types_array = {
+//         .size = module->e->global_count,
+//         .contents = types,
+//     };
+//     Array32 values_array = {
+//         .size = values_size,
+//         .contents = values,
+//     };
+//     TypedArray globals_typed_array = {
+//         .values = values_array,
+//         .types = types_array,
+//     };
+//     printf("before checkpoint global\n");
+
+//     checkpoint_global_v2(globals_typed_array);
+//     printf("checkpoint global\n");
+//     return 0;
 // }
 int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, uint8* global_data) {
     FILE *fp;

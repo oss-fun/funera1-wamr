@@ -253,6 +253,36 @@ int wasm_restore_global(const WASMModuleInstance *module, const WASMGlobalInstan
     return 0;
 }
 
+// NOTE: バグがある
+// int wasm_restore_global(const WASMModuleInstance *module, const WASMGlobalInstance *globals, uint8 **global_data, uint8 **hoge) {
+//     TypedArray global_array = restore_global_v2();
+
+//     uint8 *global_addr;
+//     int iter = 0;
+//     for (int i = 0; i < module->e->global_count; i++) {
+//         switch (globals[i].type) {
+//             case VALUE_TYPE_I32:
+//             case VALUE_TYPE_F32:
+//                 global_addr = get_global_addr_for_migration(*global_data, globals + i);
+//                 *(uint32*)global_addr = global_array.values.contents[iter++];
+//                 break;
+//             case VALUE_TYPE_I64:
+//             case VALUE_TYPE_F64:
+//                 global_addr = get_global_addr_for_migration(*global_data, globals + i);
+//                 uint32 high = global_array.values.contents[iter++];
+//                 uint32 low = global_array.values.contents[iter++];
+//                 uint64 val = ((uint64)high << 32) | low;
+//                 *(uint64 *)global_addr = val;
+//                 break;
+//             default:
+//                 perror("wasm_restore_global:type error:A\n");
+//                 break;
+//         }
+//     }
+
+//     return 0;
+// }
+
 
 int wasm_restore_program_counter(
     WASMModuleInstance *module,
