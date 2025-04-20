@@ -39,7 +39,7 @@ int debug_memories(WASMModuleInstance *module) {
     printf("memory_count: %d\n", module->memory_count);
     
     // bytes_per_page
-    for (int i = 0; i < module->memory_count; i++) {
+    for (int i = 0; i < (int32)module->memory_count; i++) {
         WASMMemoryInstance *memory = (WASMMemoryInstance *)(module->memories[i]);
         printf("%d) bytes_per_page: %d\n", i, memory->num_bytes_per_page);
         printf("%d) cur_page_count: %d\n", i, memory->cur_page_count);
@@ -53,7 +53,7 @@ int debug_memories(WASMModuleInstance *module) {
 
 // 積まれてるframe stackを出力する
 void debug_frame_info(WASMExecEnv* exec_env, WASMInterpFrame *frame) {
-    WASMModuleInstance *module = exec_env->module_inst;
+    WASMModuleInstance *module = (WASMModuleInstance *)exec_env->module_inst;
 
     int cnt = 0;
     printf("=== DEBUG Frame Stack ===\n");
@@ -93,8 +93,7 @@ int debug_function_opcodes(WASMModuleInstance *module, WASMFunctionInstance* fun
 static void
 _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_stack_id, BaseCallStackEntry *entry, bool is_stack_top)
 {
-    int i;
-    WASMModuleInstance *module = exec_env->module_inst;
+    WASMModuleInstance *module = (WASMModuleInstance *)exec_env->module_inst;
 
     // リターンアドレス
     // NOTE: 1番下のframeのときだけ、prev_frameではなくframeのリターンアドレスを出力する
@@ -104,14 +103,13 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
     // ret_addr.offset = prev_frame->ip - wasm_get_func_code(prev_frame->function);
 
     // 型スタックの中身
-    uint32 type_stack_size_from_file;
     CodePos cur_addr;
     cur_addr.fidx = frame->function - module->e->functions;
     cur_addr.offset = frame->ip - wasm_get_func_code(frame->function);
     // NOTE: WAMRはtop以外のフレームでは、call命令の次の命令にipが設定されているので、call命令を指すように戻す。
     // restore時は、Callの次の命令を指すように修正する
     CodePos call_pos = prev_pc(cur_addr);
-    printf("call_pos = (%d, %d)\n", cur_addr.fidx, cur_addr.offset);
+    printf("call_pos = (%d, %d)\n", cur_addr.fidx, (uint32)cur_addr.offset);
 
     // 値スタックの中身
     WASMFunctionInstance *func = frame->function;
@@ -135,7 +133,7 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
     };
 
     // ラベルスタックの中身
-    uint32 ctrl_stack_size = frame->csp - frame->csp_bottom;
+    size_t ctrl_stack_size = frame->csp - frame->csp_bottom;
     uint32_t* begins = (uint32_t *)malloc(ctrl_stack_size * sizeof(uint32_t));
     uint32_t* targets = (uint32_t *)malloc(ctrl_stack_size * sizeof(uint32_t));
     uint32_t* stack_pointers = (uint32_t *)malloc(ctrl_stack_size * sizeof(uint32_t));
@@ -146,9 +144,8 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
     // uint32_t cell_nums[ctrl_stack_size];
 
     WASMBranchBlock *csp = frame->csp_bottom;
-    uint32 addr;
     uint8* ip_start = wasm_get_func_code(frame->function);
-    for (i = 0; i < ctrl_stack_size; ++i, ++csp) {
+    for (size_t i = 0; i < ctrl_stack_size; ++i, ++csp) {
         begins[i] = get_addr_offset(csp->begin_addr, ip_start);
         targets[i] = get_addr_offset(csp->target_addr, ip_start);
         stack_pointers[i] = get_addr_offset(csp->frame_sp, frame->sp_bottom);
@@ -162,10 +159,6 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
     labels.stack_pointers = stack_pointers;
     labels.cell_nums = cell_nums;
 
-    // dump stack
-    uint32 entry_fidx = frame->function - module->e->functions;
-    bool is_top = (bool)(call_stack_id == 1);
-
     entry->pc = call_pos;
     entry->locals = locals;
     entry->value_stack = value_stack;
@@ -177,19 +170,17 @@ int
 wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
 {
     wasmig_log_init(1);
-    WASMModuleInstance *module =
-        (WASMModuleInstance *)exec_env->module_inst;
 
     // Call Stackのサイズを取得
     int call_stack_size = 0;
     struct WASMInterpFrame *cur_frame = frame;
-    do {
+    while(cur_frame != NULL) {
         if (cur_frame->function == NULL) break;
         call_stack_size++;
-    } while(cur_frame = cur_frame->prev_frame);
+        cur_frame = cur_frame->prev_frame;
+    };
 
     // frameをtopからbottomまで走査する
-    int i = 0;
     BaseCallStackEntry entries[call_stack_size];
     cur_frame = frame;
     for (int i = 0; i < call_stack_size; i++) {
@@ -209,6 +200,7 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
 
 int wasm_dump_memory(WASMMemoryInstance *memory) {
     checkpoint_memory(memory->memory_data, memory->cur_page_count);
+    return 0;
 }
 
 // int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, uint8* global_data) {
@@ -246,7 +238,7 @@ int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, ui
 
     // WASMMemoryInstance *memory = module->default_memory;
     uint8 *global_addr;
-    for (int i = 0; i < module->e->global_count; i++) {
+    for (int i = 0; i < (int)module->e->global_count; i++) {
         switch (globals[i].type) {
             case VALUE_TYPE_I32:
             case VALUE_TYPE_F32:

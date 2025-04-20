@@ -185,7 +185,6 @@ wasm_restore_stack(WASMExecEnv **_exec_env)
         _restore_stack(exec_env, frame, entry);
 
         prev_frame = frame;
-    //     fclose(fp);
     }
     wasmig_info("restore frame\n");
 
@@ -227,25 +226,6 @@ int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory,
     memcpy((*memory)->memory_data, mem.contents, mem.size);
     return 0;
 }
-// int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory, uint8** maddr) {
-//     FILE* memory_fp = wamr_open_image("memory.img", "rb");
-//     FILE* mem_size_fp = wamr_open_image("mem_page_count.img", "rb");
-
-//     // restore page_count
-//     uint32 page_count;
-//     fread(&page_count, sizeof(uint32), 1, mem_size_fp);
-//     wasm_enlarge_memory(module, page_count- (*memory)->cur_page_count);
-//     *maddr = page_count * (*memory)->num_bytes_per_page;
-
-//     // restore_dirty_memory(memory, memory_fp);
-//     // restore memory_data
-//     fread((*memory)->memory_data, sizeof(uint8),
-//             (*memory)->num_bytes_per_page * (*memory)->cur_page_count, memory_fp);
-
-//     fclose(memory_fp);
-//     fclose(mem_size_fp);
-//     return 0;
-// }
 
 // TODO: wasmigを使う
 int wasm_restore_global(const WASMModuleInstance *module, const WASMGlobalInstance *globals, uint8 **global_data, uint8 **global_addr) {

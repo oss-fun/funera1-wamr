@@ -1541,8 +1541,6 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
     uint32 local_idx, local_offset, global_idx;
     uint8 local_type, *global_addr;
     uint32 cache_index, type_index, param_cell_num, cell_num;
-    // TODO: option引数から設定できるようにする
-    ckpt_point = get_env_int("CKPT_POINT", INT32_MAX);
 #if WASM_ENABLE_EXCE_HANDLING != 0
     int32_t exception_tag_index;
 #endif
@@ -1655,7 +1653,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
         // debugのため、restoreした瞬間checkpoint
         bool is_restore_then_checkpoint = getenv("RESTORE_THEN_CKPT");
         if (is_restore_then_checkpoint) {
-            sig_flag = 1;
+            wasm_set_checkpoint(1);
         }
 
         FETCH_OPCODE_AND_DISPATCH();
@@ -1679,7 +1677,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
                 // NOPでチェックポイント
                 bool is_nop_checkpoint = getenv("NOP_CKPT");
                 if (is_nop_checkpoint) {
-                    sig_flag = 1;
+                    wasm_set_checkpoint(1);
                 }
                 HANDLE_OP_END(); 
             }
