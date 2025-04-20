@@ -1655,8 +1655,10 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
         frame_lp = frame->lp;
         UPDATE_ALL_FROM_FRAME();
         // debugのため、restoreした瞬間checkpoint
-        // sig_flag = 1;
-        // goto migration_async;
+        bool is_restore_then_checkpoint = getenv("RESTORE_THEN_CKPT");
+        if (is_restore_then_checkpoint) {
+            sig_flag = 1;
+        }
 
         FETCH_OPCODE_AND_DISPATCH();
     }

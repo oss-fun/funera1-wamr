@@ -218,7 +218,7 @@ int wasm_dump_memory(WASMMemoryInstance *memory) {
     fclose(mem_size_fp);
 
     // デバッグのために、すべてのメモリも保存
-    FILE *all_memory_fp = wamr_open_image("all_memory.img", "wb");
+    FILE *all_memory_fp = wamr_open_image("memory.img", "wb");
     fwrite(memory->memory_data, sizeof(uint8),
            memory->num_bytes_per_page * memory->cur_page_count, all_memory_fp);
     fclose(all_memory_fp);
