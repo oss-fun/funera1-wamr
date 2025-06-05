@@ -8,6 +8,42 @@
 #include "wasm_dispatch.h"
 
 #define BH_PLATFORM_LINUX 0
+#if WASM_ENABLE_FAST_INTERP == 0
+
+static char *image_dir = ".";
+void set_image_dir(char* dir)
+{
+    image_dir = dir;
+}
+char* get_image_dir()
+{
+    return image_dir;
+}
+
+FILE* open_image(const char* file, const char* flag) {
+    char path[1024];  // image_dir + "/" + file 用バッファ
+    char* image_dir = get_image_dir();
+
+    // image_dir の末尾が '/' かどうかを確認
+    size_t len = strlen(image_dir);
+    if (len > 0 && image_dir[len - 1] == '/') {
+        // スラッシュあり → そのまま結合
+        snprintf(path, sizeof(path), "%s%s", image_dir, file);
+    } else {
+        // スラッシュなし → '/' を補って結合
+        snprintf(path, sizeof(path), "%s/%s", image_dir, file);
+    }
+    snprintf(path, sizeof(path), "%s/%s", image_dir, file);  // パスを構築
+
+    FILE *fp = fopen(path, flag);
+    if (fp == NULL) {
+        fprintf(stderr, "failed to open %s\n", file);
+        return NULL;
+    }
+    return fp;
+}
+
+
 
 // #define skip_leb(p) while (*p++ & 0x80)
 #define skip_leb(p)                     \
@@ -108,11 +144,11 @@ int get_opcode_offset(uint8 *ip, uint8 *ip_lim) {
 
 // TODO: コードごちゃごちゃで読めないので、整理する
 uint8* get_type_stack(uint32 fidx, uint32 offset, uint32* type_stack_size, bool is_return_address) {
-    FILE *tablemap_func = fopen("tablemap_func", "rb");
+    FILE *tablemap_func = open_image("tablemap_func", "rb");
     if (!tablemap_func) printf("not found tablemap_func\n");
-    FILE *tablemap_offset = fopen("tablemap_offset", "rb");
+    FILE *tablemap_offset = open_image("tablemap_offset", "rb");
     if (!tablemap_func) printf("not found tablemap_offset\n");
-    FILE *type_table = fopen("type_table", "rb");
+    FILE *type_table = open_image("type_table", "rb");
     if (!tablemap_func) printf("not found type_table\n");
     
     /// tablemap_func
@@ -392,7 +428,7 @@ int wasm_dump_memory(WASMMemoryInstance *memory) {
 int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, uint8* global_data) {
     FILE *fp;
     const char *file = "global.img";
-    fp = fopen(file, "wb");
+    fp = open_image(file, "wb");
     if (fp == NULL) {
         fprintf(stderr, "failed to open %s\n", file);
         return -1;
@@ -430,7 +466,7 @@ int wasm_dump_program_counter(
 {
     FILE *fp;
     const char *file = "program_counter.img";
-    fp = fopen(file, "wb");
+    fp = open_image(file, "wb");
     if (fp == NULL) {
         fprintf(stderr, "failed to open %s\n", file);
         return -1;
@@ -525,3 +561,4 @@ inline
 bool wasm_get_checkpoint() {
     return sig_flag;
 }
+#endif // WASM_ENABLE_FAST_INTERP

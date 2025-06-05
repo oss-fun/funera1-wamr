@@ -114,6 +114,7 @@ print_help()
     printf("  --gen-prof-file=<path>   Generate LLVM PGO (Profile-Guided Optimization) profile file\n");
 #endif
     printf("  --restore                Restore from frame.img and interp.img\n");
+    printf("  --image-dir=<dir>        Indicate a c/r image directory\n");
     printf("  --version                Show version information\n");
     return 1;
 }
@@ -584,6 +585,7 @@ main(int argc, char *argv[])
     uint32 wasm_file_size;
     uint32 stack_size = 64 * 1024;
     bool restore_flag = false;
+    char *image_dir = ".";
 #if WASM_ENABLE_LIBC_WASI != 0
     uint32 heap_size = 0;
 #else
@@ -813,6 +815,11 @@ main(int argc, char *argv[])
         else if (!strncmp(argv[0], "--restore", 9)) {
            restore_flag = true;
         }
+        else if (!strncmp(argv[0], "--image-dir=", 12)) {
+            if (argv[0][12] == '\0')
+                return print_help();
+            image_dir = argv[0] + 12;
+        }
         else if (!strncmp(argv[0], "--version", 9)) {
             uint32 major, minor, patch;
             wasm_runtime_get_version(&major, &minor, &patch);
@@ -849,6 +856,12 @@ main(int argc, char *argv[])
 
     init_args.running_mode = running_mode;
     init_args.restore_flag = restore_flag;
+    // set image_dir
+    {
+        strncpy(init_args.image_dir, image_dir, sizeof(init_args.image_dir) - 1);
+        init_args.image_dir[sizeof(init_args.image_dir) - 1] = '\0'; // 念のため null 終端保証
+    }
+                                       //
 #if WASM_ENABLE_GLOBAL_HEAP_POOL != 0
     init_args.mem_alloc_type = Alloc_With_Pool;
     init_args.mem_alloc_option.pool.heap_buf = global_heap_buf;

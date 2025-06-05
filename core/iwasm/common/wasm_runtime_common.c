@@ -782,6 +782,10 @@ wasm_runtime_full_init_internal(RuntimeInitArgs *init_args)
     if (init_args->restore_flag) {
         set_restore_flag(true);
     }
+    
+    if (init_args->image_dir) {
+        set_image_dir(init_args->image_dir);
+    }
 
 #if WASM_ENABLE_THREAD_MGR != 0
     wasm_cluster_set_max_thread_num(init_args->max_thread_num);

@@ -18,6 +18,7 @@ bool get_restore_flag()
 }
 
 
+#if WASM_ENABLE_FAST_INTERP == 0
 static inline WASMInterpFrame *
 wasm_alloc_frame(WASMExecEnv *exec_env, uint32 size, WASMInterpFrame *prev_frame)
 {
@@ -300,3 +301,4 @@ int wasm_restore(WASMModuleInstance **module,
 
     return 0;
 }
+#endif // WASM_ENABLE_FAST_INTERP != 0

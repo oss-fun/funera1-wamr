@@ -33,14 +33,9 @@ set_addr_offset(void* base, uint32 offset)
     else return base + offset;
 }
 
-static FILE* open_image(const char* file, const char* flag) {
-    FILE *fp = fopen(file, flag);
-    if (fp == NULL) {
-        fprintf(stderr, "failed to open %s\n", file);
-        return NULL;
-    }
-    return fp;
-}
+void set_image_dir(char* dir);
+char* get_image_dir();
+FILE* open_image(const char* file, const char* flag);
 
 // int wasm_dump(WASMExecEnv *exec_env,
 //          WASMModuleInstance *module,

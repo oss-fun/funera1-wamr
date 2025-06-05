@@ -220,6 +220,7 @@ typedef struct RuntimeInitArgs {
     uint32_t segue_flags;
     /* Restore from interp.img and frame.img */
     bool restore_flag;
+    char image_dir[128];
     /**
      * If enabled
      * - llvm-jit will output a jitdump file for `perf inject`
