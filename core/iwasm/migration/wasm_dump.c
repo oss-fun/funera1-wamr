@@ -6,6 +6,7 @@
 #include <wasmig/log.h>
 #include <wasmig/table_v3.h>
 #include <wasmig/registry.h>
+#include <wasmig/state.h>
 
 #include "../interpreter/wasm_runtime.h"
 #include "wasm_migration.h"
@@ -88,66 +89,93 @@ int debug_function_opcodes(WASMModuleInstance *module, WASMFunctionInstance* fun
 }
 
 
+
 /* wasm_dump */
-static void
-_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_stack_id, BaseCallStackEntry *entry, bool is_stack_top)
+static CodePos _get_call_position(uint8 *frame_ip)
 {
-    int i;
-    WASMModuleInstance *module = exec_env->module_inst;
+    uint32 fidx, offset;
+    AddressMap metadata_address_map = wasmig_address_map_load();
+    if (!wasmig_address_map_get_key(metadata_address_map, (uint64_t)(uintptr_t)frame_ip, &fidx, &offset)) {
+        wasmig_error("address %p not found\n", (void*)frame_ip);
+        return (CodePos){0, 0};
+    }
+    wasmig_debug("frame_ip: %p, fidx: %u, p_offset: %u\n", (void*)frame_ip, fidx, offset);
+    return (CodePos){fidx, offset};
+}
 
-    // リターンアドレス
-    // NOTE: 1番下のframeのときだけ、prev_frameではなくframeのリターンアドレスを出力する
-    // WASMInterpFrame* prev_frame = (frame->prev_frame->function ? frame->prev_frame : frame);
-    // CodePos ret_addr;
-    // ret_addr.fidx = prev_frame->function - module->e->functions;
-    // ret_addr.offset = prev_frame->ip - wasm_get_func_code(prev_frame->function);
+Array8 get_type_stack(uint32_t fidx, uint32_t _offset, bool is_top_frame) {
 
-    // 型スタックの中身
-    uint32 type_stack_size_from_file;
-    CodePos cur_addr;
-    cur_addr.fidx = frame->function - module->e->functions;
-    cur_addr.offset = frame->ip - wasm_get_func_code(frame->function);
-    // NOTE: WAMRはtop以外のフレームでは、call命令の次の命令にipが設定されているので、call命令を指すように戻す。
-    // restore時は、Callの次の命令を指すように修正する
-    CodePos call_pos = prev_pc(cur_addr);
-    printf("call_pos = (%d, %d)\n", cur_addr.fidx, cur_addr.offset);
+    uint32_t offset = (is_top_frame) ? _offset : _offset + 1;
+    StackTable table = get_stack_table(fidx, offset);
+    Array8 type_stack;
+    type_stack.size = table.size;
+    type_stack.contents = (uint8_t *)malloc(type_stack.size * sizeof(uint8_t));
+    for (size_t i = 0; i < table.size; i++) {
+      StackTableEntry entry = table.data[i];
+      type_stack.contents[i] = entry.ty;
+    }
+    return type_stack;
+}
 
-    // 値スタックの中身
+// Calculate stack size from type stack
+uint32 wamr_get_stack_size(Array8 type_stack) {
+    uint32 size = 0;
+    for (size_t i = 0; i < type_stack.size; i++) {
+        if (type_stack.contents[i] > 4) {
+            wasmig_error("Unknown type: %d\n", type_stack.contents[i]);
+            return 0;
+        }
+        size += type_stack.contents[i];
+    }
+    return size;
+}
+
+static void
+_setup_value_stacks(struct WASMInterpFrame *frame, CodePos call_pos, bool is_stack_top,
+                   TypedArray *out_locals, TypedArray *out_value_stack)
+{
     WASMFunctionInstance *func = frame->function;
+    uint32 local_count = func->param_count + func->local_count;
     uint32 local_size = func->param_cell_num + func->local_cell_num;
 
-    StackTable stack_table = get_stack_table(call_pos.fidx, call_pos.offset);
-    uint32 value_stack_size = get_stack_size(stack_table);
+    // StackTable stack_table = get_stack_table(call_pos.fidx, call_pos.offset);
+    // uint32 value_stack_size = get_stack_size(stack_table);
     // コールスタックのトップ以外は引数・返り値の処理が必要
-    if (!is_stack_top) {
-        uint32_t result_size = get_result_size(stack_table);    
-        value_stack_size -= result_size;
-    }
+    // if (!is_stack_top) {
+    //     uint32_t result_size = get_result_size(stack_table);    
+    //     value_stack_size -= result_size;
+    // }
+    Array8 locals_types = get_local_types(call_pos.fidx);
+    Array8 value_stack_types = get_type_stack(call_pos.fidx, call_pos.offset, is_stack_top);
+    uint32 value_stack_size = wamr_get_stack_size(value_stack_types);
+    uint8* type_buf = value_stack_types.contents;
 
-    Array32 locals = {
-        .size = local_size,
-        .contents = frame->lp,
-    };
-    Array32 value_stack = {
-        .size = value_stack_size,
-        .contents = frame->sp_bottom,
-    };
+    out_locals->types = locals_types;
+    out_locals->values = (Array32){local_size, frame->lp};
+    out_value_stack->types = value_stack_types; 
+    out_value_stack->values = (Array32){value_stack_size, frame->sp_bottom};
+    wasmig_info("locals: {count=%d, size=%d}\n", local_count, local_size);
+    wasmig_info("value_stack: {count=%d, size=%d}\n", value_stack_types.size, value_stack_size);
 
-    // ラベルスタックの中身
+    // locals->size = local_size;
+    // locals->contents = frame->lp;
+    
+    // value_stack->size = value_stack_size;
+    // value_stack->contents = frame->sp_bottom;
+}
+
+static LabelStack
+_setup_label_stack(struct WASMInterpFrame *frame)
+{
     uint32 ctrl_stack_size = frame->csp - frame->csp_bottom;
     uint32_t* begins = (uint32_t *)malloc(ctrl_stack_size * sizeof(uint32_t));
     uint32_t* targets = (uint32_t *)malloc(ctrl_stack_size * sizeof(uint32_t));
     uint32_t* stack_pointers = (uint32_t *)malloc(ctrl_stack_size * sizeof(uint32_t));
     uint32_t* cell_nums = (uint32_t *)malloc(ctrl_stack_size * sizeof(uint32_t));
-    // uint32_t begins[ctrl_stack_size];
-    // uint32_t targets[ctrl_stack_size];
-    // uint32_t stack_pointers[ctrl_stack_size];
-    // uint32_t cell_nums[ctrl_stack_size];
 
     WASMBranchBlock *csp = frame->csp_bottom;
-    uint32 addr;
     uint8* ip_start = wasm_get_func_code(frame->function);
-    for (i = 0; i < ctrl_stack_size; ++i, ++csp) {
+    for (int i = 0; i < ctrl_stack_size; ++i, ++csp) {
         begins[i] = get_addr_offset(csp->begin_addr, ip_start);
         targets[i] = get_addr_offset(csp->target_addr, ip_start);
         stack_pointers[i] = get_addr_offset(csp->frame_sp, frame->sp_bottom);
@@ -160,11 +188,26 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
     labels.targets = targets;
     labels.stack_pointers = stack_pointers;
     labels.cell_nums = cell_nums;
+    
+    return labels;
+}
 
-    // dump stack
-    uint32 entry_fidx = frame->function - module->e->functions;
-    bool is_top = (bool)(call_stack_id == 1);
+_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_stack_id, CallStackEntry *entry, bool is_stack_top)
+{
+    WASMModuleInstance *module = exec_env->module_inst;
 
+    // プログラムカウンタの処理
+    CodePos call_pos = _get_call_position(frame->ip);
+    wasmig_debug("call_stack_id: %d, fidx: %d, offset: %d\n", call_stack_id, call_pos.fidx, call_pos.offset);
+
+    // 値スタックの設定
+    TypedArray locals, value_stack;
+    _setup_value_stacks(frame, call_pos, is_stack_top, &locals, &value_stack);
+
+    // ラベルスタックの設定
+    LabelStack labels = _setup_label_stack(frame);
+
+    // エントリに情報を設定
     entry->pc = call_pos;
     entry->locals = locals;
     entry->value_stack = value_stack;
@@ -187,18 +230,16 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
     } while(cur_frame = cur_frame->prev_frame);
 
     // frameをtopからbottomまで走査する
-    int i = 0;
-    BaseCallStackEntry entries[call_stack_size];
+    CallStackEntry entries[call_stack_size];
     cur_frame = frame;
     for (int i = 0; i < call_stack_size; i++) {
         // dump_stackは上から順に呼ばれるので、entryは下から順に格納する
-        
-        _dump_stack(exec_env, cur_frame, i, &entries[call_stack_size-i-1], (i == call_stack_size-1));
+        _dump_stack(exec_env, cur_frame, i, &entries[call_stack_size-i-1], (i == 0));
         cur_frame = cur_frame->prev_frame;
     };
 
     // frame stackのサイズを保存
-    wasmig_checkpoint_stack_v3(call_stack_size, entries);
+    wasmig_checkpoint_stack_v4(call_stack_size, entries);
     wasmig_info("Success to dump frame stack\n");
 
     return 0;
@@ -289,17 +330,8 @@ int wasm_dump_program_counter(
     uint8 *frame_ip
 )
 {
-    uint32 fidx, p_offset;
-    // fidx = func - module->e->functions;
-    // p_offset = frame_ip - wasm_get_func_code(func);
-
-    AddressMap metadata_address_map = wasmig_address_map_load();
-    if (!wasmig_address_map_get_key(metadata_address_map, (uint64_t)(uintptr_t)frame_ip, &fidx, &p_offset)) {
-        wasmig_error("address %p not found\n", (void*)frame_ip);
-        return -1;
-    }
-    wasmig_info("frame_ip: %p, fidx: %u, p_offset: %u\n", (void*)frame_ip, fidx, p_offset);
-    return wasmig_checkpoint_pc(fidx, p_offset);
+    CodePos pc = _get_call_position(frame_ip);
+    return wasmig_checkpoint_pc(pc.fidx, pc.offset);
 }
 
 int wasm_dump(WASMExecEnv *exec_env,
