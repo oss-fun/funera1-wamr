@@ -10042,7 +10042,7 @@ re_scan:
         }
         
         // construct metadatas
-        printf("frame_ip: %p, fidx: %u, offset: %u\n", (void*)p, fidx, offset);
+        // printf("frame_ip: %p, fidx: %u, offset: %u\n", (void*)p, fidx, offset);
         wasmig_address_map_set_bidirect(metadata_address_map, fidx, offset, p);
 
 #if WASM_ENABLE_FAST_INTERP != 0

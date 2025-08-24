@@ -1357,10 +1357,8 @@ migration_async:
 
             HANDLE_OP(WASM_OP_NOP) { 
                 // NOPでチェックポイント
-                bool is_nop_checkpoint = getenv("NOP_CKPT");
-                if (is_nop_checkpoint) {
-                    sig_flag = 1;
-                }
+                char* env = getenv("NOP_CKPT"); 
+                if (env && (strcmp(env, "1") == 0)) sig_flag = 1;
                 HANDLE_OP_END(); 
             }
 
