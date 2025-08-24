@@ -4,6 +4,8 @@
 #include <wasmig/migration.h>
 #include <wasmig/stack_tables.h>
 #include <wasmig/log.h>
+#include <wasmig/table_v3.h>
+#include <wasmig/registry.h>
 
 #include "../interpreter/wasm_runtime.h"
 #include "wasm_migration.h"
@@ -203,73 +205,42 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
 }
 
 
-// int wasm_dump_memory(WASMMemoryInstance *memory) {
-//     checkpoint_memory(memory->memory_data, memory->cur_page_count);
-// }
 int wasm_dump_memory(WASMMemoryInstance *memory) {
-    FILE *mem_size_fp = wamr_open_image("mem_page_count.img", "wb");
-
-    // dump_dirty_memory(memory);
-
-    printf("page_count: %d\n", memory->cur_page_count);
-    fwrite(&(memory->cur_page_count), sizeof(uint32), 1, mem_size_fp);
-
-    fclose(mem_size_fp);
-
-    // デバッグのために、すべてのメモリも保存
-    FILE *all_memory_fp = wamr_open_image("all_memory.img", "wb");
-    fwrite(memory->memory_data, sizeof(uint8),
-           memory->num_bytes_per_page * memory->cur_page_count, all_memory_fp);
-    fclose(all_memory_fp);
-    return 0;
+    wasmig_checkpoint_memory(memory->memory_data, memory->cur_page_count);
 }
+// int wasm_dump_memory(WASMMemoryInstance *memory) {
+//     FILE *mem_size_fp = wamr_open_image("mem_page_count.img", "wb");
 
-// int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, uint8* global_data) {
-//     uint64_t values[module->e->global_count];
-//     uint32_t types[module->e->global_count];
-//     uint8 *global_addr;
-//     for (int i = 0; i < module->e->global_count; i++) {
-//         switch (globals[i].type) {
-//             case VALUE_TYPE_I32:
-//             case VALUE_TYPE_F32:
-//                 values[i] = *get_global_addr_for_migration(global_data, (globals+i));
-//                 types[i] = sizeof(uint32);
-//                 break;
-//             case VALUE_TYPE_I64:
-//             case VALUE_TYPE_F64:
-//                 values[i] = *get_global_addr_for_migration(global_data, (globals+i));
-//                 types[i] = sizeof(uint64);
-//                 break;
-//             default:
-//                 printf("type error:B\n");
-//                 break;
-//         }
-//     }
+//     // dump_dirty_memory(memory);
 
-//     checkpoint_global(values, types, module->e->global_count);
+//     printf("page_count: %d\n", memory->cur_page_count);
+//     fwrite(&(memory->cur_page_count), sizeof(uint32), 1, mem_size_fp);
+
+//     fclose(mem_size_fp);
+
+//     // デバッグのために、すべてのメモリも保存
+//     FILE *all_memory_fp = wamr_open_image("all_memory.img", "wb");
+//     fwrite(memory->memory_data, sizeof(uint8),
+//            memory->num_bytes_per_page * memory->cur_page_count, all_memory_fp);
+//     fclose(all_memory_fp);
+//     return 0;
 // }
-int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, uint8* global_data) {
-    FILE *fp;
-    const char *file = "global.img";
-    fp = fopen(file, "wb");
-    if (fp == NULL) {
-        fprintf(stderr, "failed to open %s\n", file);
-        return -1;
-    }
 
-    // WASMMemoryInstance *memory = module->default_memory;
+int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, uint8* global_data) {
+    uint64_t values[module->e->global_count];
+    uint32_t types[module->e->global_count];
     uint8 *global_addr;
     for (int i = 0; i < module->e->global_count; i++) {
         switch (globals[i].type) {
             case VALUE_TYPE_I32:
             case VALUE_TYPE_F32:
-                global_addr = get_global_addr_for_migration(global_data, (globals+i));
-                fwrite(global_addr, sizeof(uint32), 1, fp);
+                values[i] = *get_global_addr_for_migration(global_data, (globals+i));
+                types[i] = sizeof(uint32);
                 break;
             case VALUE_TYPE_I64:
             case VALUE_TYPE_F64:
-                global_addr = get_global_addr_for_migration(global_data, (globals+i));
-                fwrite(global_addr, sizeof(uint64), 1, fp);
+                values[i] = *get_global_addr_for_migration(global_data, (globals+i));
+                types[i] = sizeof(uint64);
                 break;
             default:
                 printf("type error:B\n");
@@ -277,9 +248,40 @@ int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, ui
         }
     }
 
-    fclose(fp);
-    return 0;
+    wasmig_checkpoint_global(values, types, module->e->global_count);
 }
+// int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, uint8* global_data) {
+//     FILE *fp;
+//     const char *file = "global.img";
+//     fp = fopen(file, "wb");
+//     if (fp == NULL) {
+//         fprintf(stderr, "failed to open %s\n", file);
+//         return -1;
+//     }
+
+//     // WASMMemoryInstance *memory = module->default_memory;
+//     uint8 *global_addr;
+//     for (int i = 0; i < module->e->global_count; i++) {
+//         switch (globals[i].type) {
+//             case VALUE_TYPE_I32:
+//             case VALUE_TYPE_F32:
+//                 global_addr = get_global_addr_for_migration(global_data, (globals+i));
+//                 fwrite(global_addr, sizeof(uint32), 1, fp);
+//                 break;
+//             case VALUE_TYPE_I64:
+//             case VALUE_TYPE_F64:
+//                 global_addr = get_global_addr_for_migration(global_data, (globals+i));
+//                 fwrite(global_addr, sizeof(uint64), 1, fp);
+//                 break;
+//             default:
+//                 printf("type error:B\n");
+//                 break;
+//         }
+//     }
+
+//     fclose(fp);
+//     return 0;
+// }
 
 int wasm_dump_program_counter(
     WASMModuleInstance *module,
@@ -288,10 +290,16 @@ int wasm_dump_program_counter(
 )
 {
     uint32 fidx, p_offset;
-    fidx = func - module->e->functions;
-    p_offset = frame_ip - wasm_get_func_code(func);
+    // fidx = func - module->e->functions;
+    // p_offset = frame_ip - wasm_get_func_code(func);
 
-    wasmig_checkpoint_pc(fidx, p_offset);
+    AddressMap metadata_address_map = wasmig_address_map_load();
+    if (!wasmig_address_map_get_key(metadata_address_map, (uint64_t)(uintptr_t)frame_ip, &fidx, &p_offset)) {
+        wasmig_error("address %p not found\n", (void*)frame_ip);
+        return -1;
+    }
+    wasmig_info("frame_ip: %p, fidx: %u, p_offset: %u\n", (void*)frame_ip, fidx, p_offset);
+    return wasmig_checkpoint_pc(fidx, p_offset);
 }
 
 int wasm_dump(WASMExecEnv *exec_env,

@@ -9,6 +9,8 @@
 #include "wasm.h"
 #include "wasm_opcode.h"
 #include "wasm_runtime.h"
+#include <wasmig/table_v3.h>
+#include <wasmig/registry.h>
 #include "../common/wasm_native.h"
 #include "../common/wasm_memory.h"
 #if WASM_ENABLE_DEBUG_INTERP != 0
@@ -7119,6 +7121,12 @@ wasm_loader_prepare_bytecode(WASMModule *module, WASMFunction *func,
         goto fail;
     }
 
+    // Init metadata
+    // StackStateMap metadata_stack_map = wasmig_stack_state_map_create();
+    // Stack metadata_address_stack = wasmig_stack_create();
+    // Stack metadata_type_stack = wasmig_stack_create();
+    AddressMap metadata_address_map = (!wasmig_address_map_exists() ? wasmig_address_map_create(0) : wasmig_address_map_load());
+
 #if WASM_ENABLE_FAST_INTERP != 0
     /* For the first traverse, the initial value of preserved_local_offset has
      * not been determined, we use the INT16_MAX to represent that a slot has
@@ -7145,13 +7153,15 @@ re_scan:
     PUSH_CSP(LABEL_TYPE_FUNCTION, func_block_type, p);
 
     while (p < p_end) {
+        uint32 fidx = cur_func_idx;
+        uint32 offset = p - func->code;
+
         opcode = *p++;
 #if WASM_ENABLE_FAST_INTERP != 0
         p_org = p;
         disable_emit = false;
         emit_label(opcode);
 #endif
-
         switch (opcode) {
             case WASM_OP_UNREACHABLE:
                 RESET_STACK();
@@ -10030,11 +10040,18 @@ re_scan:
                                 "unsupported opcode", opcode);
                 goto fail;
         }
+        
+        // construct metadatas
+        printf("frame_ip: %p, fidx: %u, offset: %u\n", (void*)p, fidx, offset);
+        wasmig_address_map_set_bidirect(metadata_address_map, fidx, offset, p);
 
 #if WASM_ENABLE_FAST_INTERP != 0
         last_op = opcode;
 #endif
     }
+    
+    // save metadata
+    wasmig_address_map_save(metadata_address_map);
 
     if (loader_ctx->csp_num > 0) {
         if (cur_func_idx < module->function_count - 1)
