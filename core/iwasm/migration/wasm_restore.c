@@ -259,7 +259,7 @@ wasm_restore_stack(WASMExecEnv **_exec_env)
     uint32 func_idx, frame_size, all_cell_num;
     FILE *fp;
     
-    CallStack cs = restore_stack();
+    CallStack cs = wasmig_restore_stack();
     wasmig_debug("restore_stack: cs.size: %d\n", cs.size);
     print_call_stack(&cs);
 
@@ -391,7 +391,7 @@ int wasm_restore_program_counter(
     WASMModuleInstance *module,
     uint8 **frame_ip)
 {
-    CodePos pc = restore_pc();
+    CodePos pc = wasmig_restore_pc();
     *frame_ip = wasm_get_func_code(module->e->functions + pc.fidx) + pc.offset;
 
     return 0;

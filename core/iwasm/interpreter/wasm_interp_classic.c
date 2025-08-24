@@ -1100,9 +1100,7 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
     do {                                                                    \
         SYNC_ALL_TO_FRAME();                                                \
         uint8 *dummy_ip;                                                    \
-        uint32 *dummy_sp;                                                   \
         dummy_ip = frame_ip;                                                \
-        dummy_sp = frame_sp;                                                \
         int rc = wasm_dump(exec_env, module, memory,                        \
             globals, global_data, cur_func,                                 \
             frame, dummy_ip);                                               \
@@ -1184,14 +1182,13 @@ static void clear_refs() {
     char *v = "4";
 
     fd = open("/proc/self/clear_refs", O_WRONLY);
-    if (write(fd, v, 3) < 3) {
+    if (write(fd, v, 1) < 1) {
         perror("Can't clear soft-dirty bit");
     }
     close(fd);
 }
 
 static bool sig_flag = false;
-static void (*native_handler)(void) = NULL;
 bool done_flag = false;
 void
 wasm_interp_sigint(int signum)
@@ -1329,13 +1326,11 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
         opcode = *frame_ip++;
         switch (opcode) {
 #else
-migration_async:
     if (sig_flag) {
         printf("checkpointing...\n");
         SYNC_ALL_TO_FRAME();
-        uint8 *dummy_ip, *dummy_sp;
+        uint8 *dummy_ip;
         dummy_ip = frame_ip;
-        dummy_sp = frame_sp;
         int rc = wasm_dump(exec_env, module, memory, 
             globals, global_data, cur_func,
             frame, dummy_ip);

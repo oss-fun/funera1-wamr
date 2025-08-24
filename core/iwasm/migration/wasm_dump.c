@@ -170,7 +170,6 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
 }
 
 
-int
 wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
 {
     wasmig_log_init(1);
@@ -197,7 +196,7 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
     };
 
     // frame stackのサイズを保存
-    checkpoint_stack_v3(call_stack_size, entries);
+    wasmig_checkpoint_stack_v3(call_stack_size, entries);
     wasmig_info("Success to dump frame stack\n");
 
     return 0;
@@ -292,7 +291,7 @@ int wasm_dump_program_counter(
     fidx = func - module->e->functions;
     p_offset = frame_ip - wasm_get_func_code(func);
 
-    checkpoint_pc(fidx, p_offset);
+    wasmig_checkpoint_pc(fidx, p_offset);
 }
 
 int wasm_dump(WASMExecEnv *exec_env,
