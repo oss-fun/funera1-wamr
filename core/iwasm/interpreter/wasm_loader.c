@@ -7116,7 +7116,6 @@ wasm_loader_prepare_bytecode(WASMModule *module, WASMFunction *func,
     local_count = func->local_count;
     local_types = func->local_types;
     local_offsets = func->local_offsets;
-
     if (!(loader_ctx = wasm_loader_ctx_init(func, error_buf, error_buf_size))) {
         goto fail;
     }
@@ -7152,8 +7151,12 @@ re_scan:
 
     PUSH_CSP(LABEL_TYPE_FUNCTION, func_block_type, p);
 
+    uint32 fidx = module->import_function_count + cur_func_idx;
+// #ifdef WASM_ENABLE_CUSTOM_NAME_SECTION != 0
+//     wasmig_debug("function name: %s", func->field_name);
+// #endif
+
     while (p < p_end) {
-        uint32 fidx = cur_func_idx;
         uint32 offset = p - func->code;
 
         opcode = *p++;
@@ -10042,7 +10045,7 @@ re_scan:
         }
         
         // construct metadatas
-        // printf("frame_ip: %p, fidx: %u, offset: %u\n", (void*)p, fidx, offset);
+        // wasmig_debug("frame_ip: %p, fidx: %u, offset: %u", (void*)p, fidx, offset);
         wasmig_address_map_set_bidirect(metadata_address_map, fidx, offset, p);
 
 #if WASM_ENABLE_FAST_INTERP != 0
