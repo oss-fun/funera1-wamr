@@ -6,6 +6,7 @@
 #include "../interpreter/wasm_runtime.h"
 #include "wasm_migration.h"
 #include "wasm_restore.h"
+#include "helper.h"
 #include <wasmig/migration.h>
 #include <wasmig/log.h>
 
