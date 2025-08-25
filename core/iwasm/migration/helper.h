@@ -76,6 +76,9 @@ int debug_function_opcodes(WASMModuleInstance *module, WASMFunctionInstance* fun
 // Get fidx and offset from the code addres by metadata address map
 CodePos get_call_position(uint8 *frame_ip);
 
+// Get code address from the call position by metadata address map
+uint64 get_call_address(uint32 fidx, uint32 offset);
+
 /**
  * Get type stack from stack table
  * @param fidx function index

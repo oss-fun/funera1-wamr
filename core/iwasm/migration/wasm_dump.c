@@ -102,7 +102,6 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
 
 wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
 {
-    wasmig_log_init(1);
     WASMModuleInstance *module =
         (WASMModuleInstance *)exec_env->module_inst;
 

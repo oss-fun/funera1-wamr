@@ -9,6 +9,8 @@
 #include "helper.h"
 #include <wasmig/migration.h>
 #include <wasmig/log.h>
+#include <wasmig/table_v3.h>
+#include <wasmig/registry.h>
 
 static bool restore_flag;
 void set_restore_flag(bool f)
@@ -149,7 +151,7 @@ static void
 _restore_program_counter(WASMInterpFrame *frame, CallStackEntry *entry)
 {
     CodePos ret_pos = entry->pc;
-    frame->ip = wasm_get_func_code(frame->function) + ret_pos.offset;
+    frame->ip = get_call_address(ret_pos.fidx, ret_pos.offset);
     wasmig_debug("restore ip: (%d, %d)\n", entry->pc.fidx, entry->pc.offset);
 }
 
@@ -280,7 +282,6 @@ _restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, Call
 WASMInterpFrame*
 wasm_restore_stack(WASMExecEnv **_exec_env)
 {
-    wasmig_log_init(1);
     wasmig_info("wasm_restore_stack\n");
     
     WASMExecEnv *exec_env = *_exec_env;
@@ -371,7 +372,7 @@ int wasm_restore_program_counter(
     uint8 **frame_ip)
 {
     CodePos pc = wasmig_restore_pc();
-    *frame_ip = wasm_get_func_code(module->e->functions + pc.fidx) + pc.offset;
+    *frame_ip = get_call_address(pc.fidx, pc.offset);
 
     return 0;
 }

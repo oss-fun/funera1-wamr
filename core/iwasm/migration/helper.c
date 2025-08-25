@@ -96,6 +96,18 @@ CodePos get_call_position(uint8 *frame_ip)
     return (CodePos){fidx, offset};
 }
 
+uint64 get_call_address(uint32 fidx, uint32 offset)
+{
+    AddressMap address_map = wasmig_address_map_load();
+
+    uint64_t pc_value = 0;
+    if (!wasmig_address_map_get_value(address_map, fidx, offset, &pc_value)) {
+        wasmig_error("Failed to get key from address map");
+        return -1;
+    }
+    return pc_value;
+}
+
 // Get type stack from 'stack-table.msgpack'
 Array8 get_type_stack(uint32_t fidx, uint32_t _offset, bool is_top_frame) {
 
