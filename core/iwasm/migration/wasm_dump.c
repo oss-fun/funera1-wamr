@@ -91,6 +91,7 @@ int debug_function_opcodes(WASMModuleInstance *module, WASMFunctionInstance* fun
 
 
 /* wasm_dump */
+// Get fidx and offset from the code addres by metadata address map
 static CodePos _get_call_position(uint8 *frame_ip)
 {
     uint32 fidx, offset;
@@ -103,6 +104,7 @@ static CodePos _get_call_position(uint8 *frame_ip)
     return (CodePos){fidx, offset};
 }
 
+// Get type stack from 'stack-table.msgpack'
 Array8 get_type_stack(uint32_t fidx, uint32_t _offset, bool is_top_frame) {
 
     uint32_t offset = (is_top_frame) ? _offset : _offset + 1;
@@ -138,30 +140,21 @@ _setup_value_stacks(struct WASMInterpFrame *frame, CodePos call_pos, bool is_sta
     uint32 local_count = func->param_count + func->local_count;
     uint32 local_size = func->param_cell_num + func->local_cell_num;
 
-    // StackTable stack_table = get_stack_table(call_pos.fidx, call_pos.offset);
-    // uint32 value_stack_size = get_stack_size(stack_table);
-    // コールスタックのトップ以外は引数・返り値の処理が必要
-    // if (!is_stack_top) {
-    //     uint32_t result_size = get_result_size(stack_table);    
-    //     value_stack_size -= result_size;
-    // }
+    // get states
     Array8 locals_types = get_local_types(call_pos.fidx);
     Array8 value_stack_types = get_type_stack(call_pos.fidx, call_pos.offset, is_stack_top);
     uint32 value_stack_size = wamr_get_stack_size(value_stack_types);
     uint8* type_buf = value_stack_types.contents;
 
+    // restore stack
     out_locals->types = locals_types;
     out_locals->values = (Array32){local_size, frame->lp};
     out_value_stack->types = value_stack_types; 
     out_value_stack->values = (Array32){value_stack_size, frame->sp_bottom};
+    
+    // print log
     wasmig_info("locals: {count=%d, size=%d}\n", local_count, local_size);
     wasmig_info("value_stack: {count=%d, size=%d}\n", value_stack_types.size, value_stack_size);
-
-    // locals->size = local_size;
-    // locals->contents = frame->lp;
-    
-    // value_stack->size = value_stack_size;
-    // value_stack->contents = frame->sp_bottom;
 }
 
 static LabelStack
@@ -249,39 +242,24 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
 int wasm_dump_memory(WASMMemoryInstance *memory) {
     wasmig_checkpoint_memory(memory->memory_data, memory->cur_page_count);
 }
-// int wasm_dump_memory(WASMMemoryInstance *memory) {
-//     FILE *mem_size_fp = wamr_open_image("mem_page_count.img", "wb");
-
-//     // dump_dirty_memory(memory);
-
-//     printf("page_count: %d\n", memory->cur_page_count);
-//     fwrite(&(memory->cur_page_count), sizeof(uint32), 1, mem_size_fp);
-
-//     fclose(mem_size_fp);
-
-//     // デバッグのために、すべてのメモリも保存
-//     FILE *all_memory_fp = wamr_open_image("all_memory.img", "wb");
-//     fwrite(memory->memory_data, sizeof(uint8),
-//            memory->num_bytes_per_page * memory->cur_page_count, all_memory_fp);
-//     fclose(all_memory_fp);
-//     return 0;
-// }
 
 int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, uint8* global_data) {
     uint64_t values[module->e->global_count];
     uint32_t types[module->e->global_count];
     uint8 *global_addr;
-    for (int i = 0; i < module->e->global_count; i++) {
-        switch (globals[i].type) {
+    for (int global_idx = 0; global_idx < module->e->global_count; global_idx++) {
+        switch (globals[global_idx].type) {
             case VALUE_TYPE_I32:
             case VALUE_TYPE_F32:
-                values[i] = *get_global_addr_for_migration(global_data, (globals+i));
-                types[i] = sizeof(uint32);
+                global_addr = get_global_addr_for_migration(global_data, (globals+global_idx));
+                values[global_idx] = (*(uint32 *)global_addr);
+                types[global_idx] = sizeof(uint32);
                 break;
             case VALUE_TYPE_I64:
             case VALUE_TYPE_F64:
-                values[i] = *get_global_addr_for_migration(global_data, (globals+i));
-                types[i] = sizeof(uint64);
+                global_addr = get_global_addr_for_migration(global_data, (globals+global_idx));
+                values[global_idx] = (*(uint64 *)global_addr);
+                types[global_idx] = sizeof(uint64);
                 break;
             default:
                 printf("type error:B\n");
@@ -291,38 +269,6 @@ int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, ui
 
     wasmig_checkpoint_global(values, types, module->e->global_count);
 }
-// int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, uint8* global_data) {
-//     FILE *fp;
-//     const char *file = "global.img";
-//     fp = fopen(file, "wb");
-//     if (fp == NULL) {
-//         fprintf(stderr, "failed to open %s\n", file);
-//         return -1;
-//     }
-
-//     // WASMMemoryInstance *memory = module->default_memory;
-//     uint8 *global_addr;
-//     for (int i = 0; i < module->e->global_count; i++) {
-//         switch (globals[i].type) {
-//             case VALUE_TYPE_I32:
-//             case VALUE_TYPE_F32:
-//                 global_addr = get_global_addr_for_migration(global_data, (globals+i));
-//                 fwrite(global_addr, sizeof(uint32), 1, fp);
-//                 break;
-//             case VALUE_TYPE_I64:
-//             case VALUE_TYPE_F64:
-//                 global_addr = get_global_addr_for_migration(global_data, (globals+i));
-//                 fwrite(global_addr, sizeof(uint64), 1, fp);
-//                 break;
-//             default:
-//                 printf("type error:B\n");
-//                 break;
-//         }
-//     }
-
-//     fclose(fp);
-//     return 0;
-// }
 
 int wasm_dump_program_counter(
     WASMModuleInstance *module,
