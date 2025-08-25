@@ -84,7 +84,7 @@ int debug_function_opcodes(WASMModuleInstance *module, WASMFunctionInstance* fun
 
 
 // Get fidx and offset from the code addres by metadata address map
-static CodePos _get_call_position(uint8 *frame_ip)
+CodePos get_call_position(uint8 *frame_ip)
 {
     uint32 fidx, offset;
     AddressMap metadata_address_map = wasmig_address_map_load();

@@ -146,14 +146,11 @@ debug_label_stack(WASMInterpFrame *frame)
 }
 
 static void
-static void
 _restore_program_counter(WASMInterpFrame *frame, CallStackEntry *entry)
 {
-    // NOTE: WAMRはtop以外のフレームでは、call命令の次の命令にipが設定されているので、checkpointではcall命令を指すpcを保存した。
-    // restore時は、Callの次の命令を指すように修正する
-    CodePos ret_pos = next_pc(entry->pc);
+    CodePos ret_pos = entry->pc;
     frame->ip = wasm_get_func_code(frame->function) + ret_pos.offset;
-    printf("restore ip: (%d, %d)\n", entry->pc.fidx, entry->pc.offset);
+    wasmig_debug("restore ip: (%d, %d)\n", entry->pc.fidx, entry->pc.offset);
 }
 
 // Initialize stack and call stack boundaries
@@ -235,7 +232,6 @@ _restore_frame(WASMExecEnv *exec_env, WASMInterpFrame *frame, CallStackEntry *en
 }
 
 // Allocate frame
-WASMInterpFrame*
 static WASMInterpFrame *
 _create_frame(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, 
               CallStackEntry *entry, WASMInterpFrame *prev_frame)
@@ -263,7 +259,7 @@ _restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, Call
 {
     WASMInterpFrame *frame, *prev_frame = wasm_exec_env_get_cur_frame(exec_env);
 
-    // Scan call stack entries
+    // Iterate call stack entries
     for (int i = 0; i < cs->size; i++) {
         CallStackEntry *entry = &cs->entries[i];
         
@@ -281,6 +277,7 @@ _restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, Call
     wasmig_debug("restore frame\n");
 }
 
+WASMInterpFrame*
 wasm_restore_stack(WASMExecEnv **_exec_env)
 {
     wasmig_log_init(1);
@@ -334,25 +331,6 @@ int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory,
     memcpy((*memory)->memory_data, mem.contents, mem.size);
     return 0;
 }
-// int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory, uint8** maddr) {
-//     FILE* memory_fp = wamr_open_image("memory.img", "rb");
-//     FILE* mem_size_fp = wamr_open_image("mem_page_count.img", "rb");
-
-//     // restore page_count
-//     uint32 page_count;
-//     fread(&page_count, sizeof(uint32), 1, mem_size_fp);
-//     wasm_enlarge_memory(module, page_count- (*memory)->cur_page_count);
-//     *maddr = page_count * (*memory)->num_bytes_per_page;
-
-//     // restore_dirty_memory(memory, memory_fp);
-//     // restore memory_data
-//     fread((*memory)->memory_data, sizeof(uint8),
-//             (*memory)->num_bytes_per_page * (*memory)->cur_page_count, memory_fp);
-
-//     fclose(memory_fp);
-//     fclose(mem_size_fp);
-//     return 0;
-// }
 
 // TODO: wasmigを使う
 int wasm_restore_global(const WASMModuleInstance *module, const WASMGlobalInstance *globals, uint8 **global_data, uint8 **global_addr) {
