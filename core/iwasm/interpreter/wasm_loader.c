@@ -6482,32 +6482,28 @@ fail:
 
 #define PUSH_CSP_FOR_RESTORE(label_type, start_addr, cell_num)              \
     do {                                                                    \
-        if (func->ret_pos.offset <= offset) {                               \
-            csp = (CSPEntry){                                                   \
-                .label_type = label_type,                                       \
-                .begin_addr = start_addr,                                       \
-                .end_addr = NULL,                                               \
-                .frame_sp = loader_ctx->stack_cell_num,                         \
-                .cell_num = cell_num,                                           \
-            };                                                                  \
-            csp++;                                                              \
-        }                                                                       \
+        if (func->return_pos.offset <= offset) {                           \
+            csp[cur_stack_height] = (CSPEntry){                         \
+                .label_type = label_type,                                   \
+                .start_addr = start_addr,                                   \
+                .end_addr = NULL,                                           \
+                .sp_offset = loader_ctx->stack_cell_num,                \
+                .cell_num = cell_num,                                     \
+            };                                                              \
+        }                                                                   \
         cur_stack_height++;                                                     \
     } while (0);
     
 #define POP_CSP_FOR_RESTORE(end_addr)                                           \
     do {                                                                        \
-        if (func->ret_pos.offset <= offset) {                                   \
-            csp--;                                                              \
-        }                                                                       \
-        else {                                                                  \
-           if (csp-base_csp == cur_stack_height) {                              \
+        if (offset < func->return_pos.offset) {                                 \
+           if (cur_stack_height == seen_stack_height) {                              \
                 if (csp->label_type == LABEL_TYPE_LOOP) {                       \
                     csp->target_addr = csp->start_addr;                         \
                 } else {                                                        \
                     csp->target_addr = end_addr;                                \
                 }                                                               \
-                csp--;                                                          \
+               seen_stack_height--;                                             \
            }                                                                    \
         }                                                                       \
         cur_stack_height--;                                                     \
@@ -7183,14 +7179,9 @@ re_scan:
 #endif
 
     CSPEntry csp[1024];
-    uint32 cur_stack_height = 1, seen_stack_height;
+    uint32 cur_stack_height = 0, seen_stack_height = 0;
     PUSH_CSP(LABEL_TYPE_FUNCTION, func_block_type, p);
-    csp = (CSPEntry){
-        .begin_addr = p,
-        .end_addr = NULL,
-        .frame_sp = loader_ctx->stack_cell_num,
-        .cell_num = func->return_cell_num,
-    };
+    PUSH_CSP_FOR_RESTORE(LABEL_TYPE_FUNCTION, p, func->ret_cell_num);
 
     uint32 fidx = module->import_function_count + cur_func_idx;
 // #ifdef WASM_ENABLE_CUSTOM_NAME_SECTION != 0
@@ -7317,13 +7308,13 @@ re_scan:
                 uint8 label_type = LABEL_TYPE_BLOCK + (opcode - WASM_OP_BLOCK);
                 switch (label_type) {
                     case LABEL_TYPE_BLOCK:
-                        PUSH_CSP_FOR_RESTORE(label_type, p, loader_ctx->stack_cell_num, wasm_value_type_cell_num(value_type));
+                        PUSH_CSP_FOR_RESTORE(label_type, p, wasm_value_type_cell_num(value_type));
                         break;
                     case LABEL_TYPE_LOOP:
-                        PUSH_CSP_FOR_RESTORE(label_type, p, loader_ctx->stack_cell_num, 0);
+                        PUSH_CSP_FOR_RESTORE(label_type, p, 0);
                         break;
                     case LABEL_TYPE_IF:
-                        PUSH_CSP_FOR_RESTORE(label_type, p, loader_ctx->stack_cell_num, wasm_value_type_cell_num(value_type));
+                        PUSH_CSP_FOR_RESTORE(label_type, p, wasm_value_type_cell_num(value_type));
                         break;
                 }
                 
@@ -7512,7 +7503,7 @@ re_scan:
                     }
                 }
 
-                cur_stack_height--;
+                POP_CSP_FOR_RESTORE(p-1);
                 POP_CSP();
 
 #if WASM_ENABLE_FAST_INTERP != 0
@@ -10103,56 +10094,9 @@ re_scan:
         // wasmig_debug("frame_ip: %p, fidx: %u, offset: %u", (void*)p, fidx, offset);
         wasmig_address_map_set_bidirect(metadata_address_map, fidx, offset, p);
 
-        // construct CSP
-        // NOTE: return_pos.offset == offsetの地点でCSPを確定させていいの？End来てからじゃないと情報確定しなくない？
-        //       そして、突き詰めると、最後までなめないと確定しなくない？（最初のフレームの情報が確定するのは最後のはEndを読んだときなので）
-        if (func->is_restore_frame && func->return_pos.offset == offset) {
-            // Allocate CSP
-            CSPEntry* csp = (CSPEntry *)malloc(sizeof(CSPEntry) * loader_ctx->csp_num);
-            if (!csp) {
-                set_error_buf(error_buf, error_buf_size, "Failed to allocate memory for CSP");
-                goto fail;
-            }
-
-            // Iterate CSP
-            uint8 *start_addr, *target_addr;
-            uint32 cell_num, param_cell_num;
-            for (int i = 0; i < loader_ctx->csp_num; i++) {
-                BranchBlock b = loader_ctx->frame_csp_bottom[i];
-                CSPEntry* entry = &csp[i];
-                
-                start_addr = b.start_addr;
-                switch (b.label_type) {
-                    case LABEL_TYPE_FUNCTION:
-                        target_addr = b.end_addr;
-                        cell_num = b.stack_cell_num;
-                        param_cell_num = 0;
-                        break;
-                    case LABEL_TYPE_BLOCK:
-                        target_addr = b.end_addr;
-                        cell_num = b.stack_cell_num;
-                        param_cell_num = 0;
-                        break;
-                    case LABEL_TYPE_LOOP:
-                        target_addr = b.start_addr;
-                        cell_num = b.stack_cell_num;
-                        param_cell_num = 0;
-                        break;
-                    case LABEL_TYPE_IF:
-                        target_addr = b.end_addr;
-                        cell_num = b.stack_cell_num;
-                        param_cell_num = 0;
-                        break;
-                }
-
-                csp[i] = (CSPEntry){
-                    .start_addr = start_addr,
-                    .target_addr = target_addr,
-                    .frame_sp = loader_ctx->stack_cell_num - param_cell_num,
-                    .cell_num = cell_num,
-                };
-            }
-        }
+        // update seen_stack_height
+        if (offset == func->return_pos.offset) 
+            seen_stack_height = cur_stack_height;
 
 #if WASM_ENABLE_FAST_INTERP != 0
         last_op = opcode;
