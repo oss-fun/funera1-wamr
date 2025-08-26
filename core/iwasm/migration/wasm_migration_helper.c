@@ -240,3 +240,8 @@ debug_label_stack(WASMInterpFrame *frame)
     }
     fprintf(stderr, "]\n");
 }
+
+static WASMStackFrameCSP* WASMCallStack;
+WASMStackFrameCSP* load_wasm_call_stack() {
+    return WASMCallStack;
+}

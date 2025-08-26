@@ -10,10 +10,15 @@
 #include "bh_hashmap.h"
 #include "bh_assert.h"
 #include <wasmig/state.h>
+// #include "wasm_migration_helper.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct CSPEntry CSPEntry;
+
+typedef struct WASMStackFrameCSP WASMStackFrameCSP;
 
 /** Value Type */
 #define VALUE_TYPE_I32 0x7F
@@ -266,8 +271,10 @@ struct WASMFunction {
     uint32 const_cell_num;
 #endif
 
+    // CSP
     bool is_restore_frame;
     CodePos return_pos;
+    WASMStackFrameCSP *frame;
 
 #if WASM_ENABLE_FAST_JIT != 0 || WASM_ENABLE_JIT != 0 \
     || WASM_ENABLE_WAMR_COMPILER != 0

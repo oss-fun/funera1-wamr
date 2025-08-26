@@ -95,6 +95,21 @@ Array8 get_type_stack(uint32_t fidx, uint32_t _offset, bool is_top_frame);
  */
 uint32 wamr_get_stack_size(Array8 type_stack);
 
+typedef struct CSPEntry {
+    uint8* begin_addr;
+    uint8* target_addr;
+    uint32 param_cell_num;
+    uint32 cell_num;
+} CSPEntry;
+
+typedef struct WASMStackFrameCSP {
+    CallStackEntry entry;
+    CSPEntry* csp;
+} WASMStackFrameCSP;
+
+WASMStackFrameCSP* load_wasm_call_stack();
+
+
 #ifdef __cplusplus
 }
 #endif
