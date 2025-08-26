@@ -4956,6 +4956,15 @@ typedef struct BranchBlock {
     bool is_stack_polymorphic;
 } BranchBlock;
 
+/* CSP entry for restoration purposes - different from migration CSPEntry */
+typedef struct CSPEntry {
+    uint8 label_type;
+    uint8 *start_addr;
+    uint8 *target_addr;
+    uint32 sp_offset;
+    uint32 cell_num;
+} CSPEntry;
+
 typedef struct WASMLoaderContext {
     /* frame ref stack */
     uint8 *frame_ref;
@@ -7178,18 +7187,20 @@ re_scan:
     }
 #endif
 
+    uint32 fidx = module->import_function_count + cur_func_idx;
+    uint32 offset = 0;
+
     CSPEntry csp[1024];
     uint32 cur_stack_height = 0, seen_stack_height = 0;
     PUSH_CSP(LABEL_TYPE_FUNCTION, func_block_type, p);
     PUSH_CSP_FOR_RESTORE(LABEL_TYPE_FUNCTION, p, func->ret_cell_num);
 
-    uint32 fidx = module->import_function_count + cur_func_idx;
 // #ifdef WASM_ENABLE_CUSTOM_NAME_SECTION != 0
 //     wasmig_debug("function name: %s", func->field_name);
 // #endif
 
     while (p < p_end) {
-        uint32 offset = p - func->code;
+        offset = p - func->code;
 
         opcode = *p++;
 #if WASM_ENABLE_FAST_INTERP != 0
