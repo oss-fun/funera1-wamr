@@ -1278,6 +1278,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
         int rc;
         struct timespec ts1, ts2;
 
+        // NOTE: Can the wasm_restore_stack() include in wasm_restore()?
         clock_gettime(CLOCK_MONOTONIC, &ts1);
         frame = wasm_restore_stack(&exec_env);
         clock_gettime(CLOCK_MONOTONIC, &ts2);
@@ -1317,9 +1318,13 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
 
         frame_lp = frame->lp;
         UPDATE_ALL_FROM_FRAME();
-        // debugのため、restoreした瞬間checkpoint
-        // sig_flag = 1;
-        // goto migration_async;
+
+        // checkpoint after restoring the Wasm state for debugging
+        char* is_checkpoint_after_restore = getenv("CHECKPOINT_AFTER_RESTORE"); 
+        if (is_checkpoint_after_restore && (strcmp(is_checkpoint_after_restore, "1") == 0)) {
+            sig_flag = 1;
+            goto migration_async;
+        }
 
         FETCH_OPCODE_AND_DISPATCH();
     }

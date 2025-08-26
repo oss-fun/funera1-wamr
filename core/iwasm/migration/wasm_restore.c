@@ -6,8 +6,11 @@
 #include "../interpreter/wasm_runtime.h"
 #include "wasm_migration.h"
 #include "wasm_restore.h"
+#include "helper.h"
 #include <wasmig/migration.h>
 #include <wasmig/log.h>
+#include <wasmig/table_v3.h>
+#include <wasmig/registry.h>
 
 static bool restore_flag;
 void set_restore_flag(bool f)
@@ -145,162 +148,157 @@ debug_label_stack(WASMInterpFrame *frame)
 }
 
 static void
-_restore_stack(WASMExecEnv *exec_env, WASMInterpFrame *frame, CallStackEntry *entry)
+_restore_program_counter(WASMInterpFrame *frame, CallStackEntry *entry)
 {
-    WASMModuleInstance *module_inst = exec_env->module_inst;
-    WASMFunctionInstance *func = frame->function;
-    // NOTE: WAMRはtop以外のフレームでは、call命令の次の命令にipが設定されているので、checkpointではcall命令を指すpcを保存した。
-    // restore時は、Callの次の命令を指すように修正する
-    CodePos ret_pos = next_pc(entry->pc);
-    frame->ip = wasm_get_func_code(frame->function) + ret_pos.offset;
-    printf("restore ip: (%d, %d)\n", entry->pc.fidx, entry->pc.offset);
+    CodePos ret_pos = entry->pc;
+    frame->ip = get_call_address(ret_pos.fidx, ret_pos.offset);
+    wasmig_debug("restore ip: (%d, %d)\n", entry->pc.fidx, entry->pc.offset);
+}
 
-    // 初期化
+// Initialize stack and call stack boundaries
+static void
+_initialize_frame_boundaries(WASMInterpFrame *frame, WASMFunctionInstance *func)
+{
     frame->sp_bottom = frame->lp + func->param_cell_num + func->local_cell_num;
     frame->sp_boundary = frame->sp_bottom + func->u.func->max_stack_cell_num;
     frame->csp_bottom = frame->sp_boundary;
     frame->csp_boundary = frame->csp_bottom + func->u.func->max_block_num;
-    // frame->tsp_bottom = frame->csp_boundary;
-    // frame->tsp_boundary = frame->tsp_bottom + func->u.func->max_stack_cell_num;
+}
 
-    // NOTE: ここで復元すべきか
-    // リターンアドレス
-    // WASMInterpFrame* prev_frame = frame->prev_frame;
-    // uint32 fidx, offset;
-    // fread(&fidx, sizeof(uint32), 1, fp);
-    // fread(&offset, sizeof(uint32), 1, fp);
-    // if (prev_frame->function != NULL)
-    //     prev_frame->ip = wasm_get_func_code(prev_frame->function) + entry->return_addr.offset;
-
-    // NOTE: 型スタックのサイズはここではいらない
-    // 型スタックのサイズ
-    // uint32 locals = func->param_count + func->local_count;
-    // uint32 full_type_stack_size, type_stack_size;
-    // fread(&full_type_stack_size, sizeof(uint32), 1, fp);
-    // type_stack_size = full_type_stack_size - locals;                                      // 統一フォーマットでは、ローカルも型/値スタックに入れているが、WAMRの型/値スタックのサイズはローカル抜き
-    // frame->tsp = frame->tsp_bottom + type_stack_size;
-
-    // 型スタックの中身
-    // fseek(fp, sizeof(uint8)*locals, SEEK_CUR);                      // localのやつはWAMRでは必要ないので飛ばす
-
-    // uint8 type_stack[type_stack_size];
-    // uint32* tsp_bottom = frame->tsp_bottom;
-    // for (uint32 i = 0; i < type_stack_size; ++i) {
-    //     fread(&type_stack[i], sizeof(uint8), 1, fp);
-    // }
-
-    // ローカル+値スタックのサイズ復元
-    // uint32 *tsp = frame->tsp_bottom;
-    // uint32 value_stack_size = 0;
-    // for (uint32 i = 0; i < entry->locals.size; ++i) {
-    //     value_stack_size += type_stack[i];
-    // }
+static void
+_restore_value_stacks(WASMInterpFrame *frame, WASMFunctionInstance *func, CallStackEntry *entry)
+{
+    // 値スタック（SP）のサイズ復元
     uint32 stack_size = entry->value_stack.values.size;
     frame->sp = frame->sp_bottom + stack_size;
-    wasmig_info("restore sp");
+    wasmig_debug("restore sp");
 
-    // 値スタックの中身
+    // restore locals
     uint32 local_cell_num = func->param_cell_num + func->local_cell_num;
     printf("local_cell_num: %d\n", local_cell_num);
     printf("locals.values.size: %d\n", entry->locals.values.size);
     memcpy(frame->lp, entry->locals.values.contents, entry->locals.values.size * sizeof(uint32_t));
-    // fread(frame->lp, sizeof(uint32), local_cell_num, fp);
-    // debug_local(frame);
-    // fread(frame->sp_bottom, sizeof(uint32), value_stack_size, fp);
+
+    // restore value stack
     memcpy(frame->sp_bottom, entry->value_stack.values.contents, entry->value_stack.values.size * sizeof(uint32_t));
-    wasmig_info("restore value stack");
+    wasmig_debug("restore value stack");
+}
 
-
-    // ラベルスタックのサイズ
+static void
+_restore_label_stack(WASMInterpFrame *frame, CallStackEntry *entry)
+{
+    // ラベルスタックのサイズ設定
     uint32 ctrl_stack_size = entry->label_stack.size;
-    // fread(&ctrl_stack_size, sizeof(uint32), 1, fp);
     frame->csp = frame->csp_bottom + ctrl_stack_size;
 
-
-    // ラベルスタックの中身
+    // ラベルスタックの復元
     WASMBranchBlock *csp = frame->csp_bottom;
     for (int i = 0; i < ctrl_stack_size; ++i, ++csp) {
         uint64 offset;
 
-        // uint8 *begin_addr;
-        // fread(&offset, sizeof(uint32), 1, fp);
+        // begin_addr の復元
         offset = entry->label_stack.begins[i];
         csp->begin_addr = set_addr_offset(wasm_get_func_code(frame->function), offset);
 
-        // uint8 *target_addr;
-        // fread(&offset, sizeof(uint32), 1, fp);
+        // target_addr の復元
         offset = entry->label_stack.targets[i];
         csp->target_addr = set_addr_offset(wasm_get_func_code(frame->function), offset);
 
-        // uint32 *frame_sp;
-        // fread(&offset, sizeof(uint32), 1, fp);
+        // frame_sp の復元
         offset = entry->label_stack.stack_pointers[i];
         csp->frame_sp = set_addr_offset(frame->sp_bottom, offset);
 
-        // uint32 cell_num;
+        // cell_num の復元
         offset = entry->label_stack.cell_nums[i];
         csp->cell_num = offset;
-        // fread(&csp->cell_num, sizeof(uint32), 1, fp);
     }
     wasmig_info("restore label stack");
 }
 
-WASMInterpFrame*
-wasm_restore_stack(WASMExecEnv **_exec_env)
+_restore_frame(WASMExecEnv *exec_env, WASMInterpFrame *frame, CallStackEntry *entry)
 {
-    wasmig_log_init(1);
-    wasmig_info("wasm_restore_stack\n");
-    WASMExecEnv *exec_env = *_exec_env;
-    WASMModuleInstance *module_inst =
-        (WASMModuleInstance *)exec_env->module_inst;
-    WASMInterpFrame *frame, *prev_frame = wasm_exec_env_get_cur_frame(exec_env);
-    frame = prev_frame;
-    WASMFunctionInstance *function;
-    uint32 func_idx, frame_size, all_cell_num;
-    FILE *fp;
+    WASMModuleInstance *module_inst = exec_env->module_inst;
+    WASMFunctionInstance *func = frame->function;
+
+    // restore a program counter
+    _restore_program_counter(frame, entry);
+
+    // Initialize frame boundaries
+    _initialize_frame_boundaries(frame, func);
+
+    // restore locals and value stack
+    _restore_value_stacks(frame, func, entry);
+
+    // restore label stack
+    _restore_label_stack(frame, entry);
+}
+
+// Allocate frame
+static WASMInterpFrame *
+_create_frame(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, 
+              CallStackEntry *entry, WASMInterpFrame *prev_frame)
+{
+    WASMFunctionInstance *function = module_inst->e->functions + entry->pc.fidx;
     
-    CallStack cs = wasmig_restore_stack();
-    wasmig_debug("restore_stack: cs.size: %d\n", cs.size);
-    print_call_stack(&cs);
-
-    // uint32 frame_stack_size;
-    // fp = open_image("frame.img", "rb");
-    // fread(&frame_stack_size, sizeof(uint32), 1, fp);
-    // fclose(fp);
-
-    // char file[32];
-    // uint32 fidx = 0;
-    for (int i = 0; i < cs.size; i++) {
-        CallStackEntry *entry = &cs.entries[i];
-        function = module_inst->e->functions + entry->pc.fidx;
-
-        // TODO: uint64になってるけど、多分uint32
-        all_cell_num = (uint32)function->param_cell_num
+    // Calculate frame size
+    uint32 all_cell_num = (uint32)function->param_cell_num
                         + (uint32)function->local_cell_num
                         + (uint32)function->u.func->max_stack_cell_num
                         + ((uint32)function->u.func->max_block_num)
                                 * sizeof(WASMBranchBlock) / 4
                         + (uint32)function->u.func->max_stack_cell_num;
-        frame_size = wasm_interp_interp_frame_size(all_cell_num);
-        frame = wasm_alloc_frame(exec_env, frame_size,
-                            (WASMInterpFrame *)prev_frame);
+    uint32 frame_size = wasm_interp_interp_frame_size(all_cell_num);
+    
+    // Allocate this frame
+    WASMInterpFrame *frame = wasm_alloc_frame(exec_env, frame_size, prev_frame);
+    frame->function = function;
+    
+    return frame;
+}
 
-        // フレームをrestore
-        frame->function = function;
-        _restore_stack(exec_env, frame, entry);
+static void
+_restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, CallStack *cs)
+{
+    WASMInterpFrame *frame, *prev_frame = wasm_exec_env_get_cur_frame(exec_env);
 
+    // Iterate call stack entries
+    for (int i = 0; i < cs->size; i++) {
+        CallStackEntry *entry = &cs->entries[i];
+        
+        // allocate frame
+        frame = _create_frame(exec_env, module_inst, entry, prev_frame);
+        
+        // restore frame
+        _restore_frame(exec_env, frame, entry);
+        
         prev_frame = frame;
-    //     fclose(fp);
     }
-    wasmig_info("restore frame\n");
-
-    // debug_wasm_interp_frame(frame, module_inst->e->functions);
+    
+    // 最新のフレームを設定
     wasm_exec_env_set_cur_frame(exec_env, frame);
+    wasmig_debug("restore frame\n");
+}
+
+WASMInterpFrame*
+wasm_restore_stack(WASMExecEnv **_exec_env)
+{
+    wasmig_info("wasm_restore_stack\n");
+    
+    WASMExecEnv *exec_env = *_exec_env;
+    WASMModuleInstance *module_inst = (WASMModuleInstance *)exec_env->module_inst;
+    
+    // コールスタックの復元
+    CallStack cs = wasmig_restore_stack();
+    wasmig_debug("restore_stack: cs.size: %d\n", cs.size);
+    // print_call_stack(&cs);
+    
+    // 全フレームの復元
+    _restore_all_frames(exec_env, module_inst, &cs);
     
     _exec_env = &exec_env;
-
+    
     wasmig_info("Finish to restore stack\n");
-    return frame;
+    return wasm_exec_env_get_cur_frame(exec_env);
 }
 
 void restore_dirty_memory(WASMMemoryInstance **memory, FILE* memory_fp) {
@@ -320,36 +318,18 @@ void restore_dirty_memory(WASMMemoryInstance **memory, FILE* memory_fp) {
     }
 }
 
-// int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory, uint8** maddr) {
-//     Array8 mem = restore_memory();
-
-//     // restore page_count
-//     uint32 page_count = mem.size / (*memory)->num_bytes_per_page;
-//     printf("page_count: %d\n", page_count);
-//     wasm_enlarge_memory(module, page_count- (*memory)->cur_page_count);
-//     *maddr = page_count * (*memory)->num_bytes_per_page;
-
-//     // restore data
-//     memcpy((*memory)->memory_data, mem.contents, mem.size);
-//     return 0;
-// }
 int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory, uint8** maddr) {
-    FILE* memory_fp = wamr_open_image("memory.img", "rb");
-    FILE* mem_size_fp = wamr_open_image("mem_page_count.img", "rb");
+    Array8 mem = wasmig_restore_memory();
 
     // restore page_count
-    uint32 page_count;
-    fread(&page_count, sizeof(uint32), 1, mem_size_fp);
+    uint32 page_count = mem.size / (*memory)->num_bytes_per_page;
+    wasmig_debug("[Restore memory] page_count: %d", page_count);
     wasm_enlarge_memory(module, page_count- (*memory)->cur_page_count);
     *maddr = page_count * (*memory)->num_bytes_per_page;
 
-    // restore_dirty_memory(memory, memory_fp);
-    // restore memory_data
-    fread((*memory)->memory_data, sizeof(uint8),
-            (*memory)->num_bytes_per_page * (*memory)->cur_page_count, memory_fp);
-
-    fclose(memory_fp);
-    fclose(mem_size_fp);
+    // restore data
+    // NOTE: Can it replace memcpy to memmove?
+    memcpy((*memory)->memory_data, mem.contents, mem.size);
     return 0;
 }
 
@@ -392,7 +372,7 @@ int wasm_restore_program_counter(
     uint8 **frame_ip)
 {
     CodePos pc = wasmig_restore_pc();
-    *frame_ip = wasm_get_func_code(module->e->functions + pc.fidx) + pc.offset;
+    *frame_ip = get_call_address(pc.fidx, pc.offset);
 
     return 0;
 }
