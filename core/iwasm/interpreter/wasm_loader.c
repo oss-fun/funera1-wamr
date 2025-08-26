@@ -11,6 +11,9 @@
 #include "wasm_runtime.h"
 #include <wasmig/table_v3.h>
 #include <wasmig/registry.h>
+#include <wasmig/migration.h>
+#include "wasm_migration.h"
+#include "wasm_migration_helper.h"
 #include "../common/wasm_native.h"
 #include "../common/wasm_memory.h"
 #if WASM_ENABLE_DEBUG_INTERP != 0
@@ -3581,6 +3584,20 @@ load_from_sections(WASMModule *module, WASMSection *sections,
     handle_table = wasm_interp_get_handle_table();
 #endif
 
+    // Get call stack to emulate control stack
+    if (get_restore_flag()) {
+        CallStack call_stack = wasmig_restore_stack();
+
+        // Set restore information to WASMFunction 
+        for (size_t i = 0; i < call_stack.size; i++) {
+            CallStackEntry *frame = &call_stack.entries[i];
+            WASMFunction *func = module->functions[frame->pc.fidx - module->import_function_count];
+            func->is_restore_frame = true;
+            func->return_pos = frame->pc;
+        }
+    }
+
+    int cur_frame = 0;
     for (i = 0; i < module->function_count; i++) {
         WASMFunction *func = module->functions[i];
         if (!wasm_loader_prepare_bytecode(module, func, i, error_buf,

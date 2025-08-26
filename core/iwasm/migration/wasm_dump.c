@@ -12,7 +12,7 @@
 #include "wasm_migration.h"
 #include "wasm_dump.h"
 #include "wasm_dispatch.h"
-#include "helper.h"
+#include "wasm_migration_helper.h"
 
 // #define skip_leb(p) while (*p++ & 0x80)
 #define skip_leb(p)                     \

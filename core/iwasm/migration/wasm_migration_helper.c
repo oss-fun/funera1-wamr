@@ -12,7 +12,7 @@
 #include "wasm_migration.h"
 #include "wasm_dump.h"
 #include "wasm_dispatch.h"
-#include "helper.h"
+#include "wasm_migration_helper.h"
 
 int64_t get_time(struct timespec ts1, struct timespec ts2) {
   int64_t sec = ts2.tv_sec - ts1.tv_sec;
@@ -134,4 +134,109 @@ uint32 wamr_get_stack_size(Array8 type_stack) {
         size += type_stack.contents[i];
     }
     return size;
+}
+
+static void
+debug_frame(WASMInterpFrame* frame)
+{
+    // fprintf(stderr, "Return Address: (%d, %d)\n", fidx, offset);
+    // fprintf(stderr, "TypeStack Content: [");
+    // uint32* tsp_bottom = frame->tsp_bottom;
+    // for (uint32 i = 0; i < type_stack_size; ++i) {
+    //     uint8 type = *(tsp_bottom+i);
+    //     fprintf(stderr, "%d, ", type);
+    // }
+    // fprintf(stderr, "]\n");
+    // fprintf(stderr, "Value Stack Size: %d\n", value_stack_size);
+    // fprintf(stderr, "Type Stack Size(Local含む): %d\n", full_type_stack_size);
+    // fprintf(stderr, "Type Stack Size(Local含まず): %d\n", type_stack_size);
+    // fprintf(stderr, "Label Stack Size: %d\n", ctrl_stack_size);
+    
+}
+
+static void
+debug_local(WASMInterpFrame *frame)
+{
+    WASMFunctionInstance *func = frame->function;
+    uint32 *lp = frame->lp;
+    uint32 param_count = func->param_count;
+    uint32 local_count = func->local_count;
+
+    fprintf(stderr, "locals: [");
+    for (uint32 i = 0; i < param_count; i++) {
+        switch (func->param_types[i]) {
+            case VALUE_TYPE_I32:
+            case VALUE_TYPE_F32:
+                fprintf(stderr, "%u, ", *(uint32 *)lp);
+                lp++;
+                break;
+            case VALUE_TYPE_I64:
+            case VALUE_TYPE_F64:
+                fprintf(stderr, "%lu, ", *(uint64 *)lp);
+                lp += 2;
+                break;
+            default:
+                printf("TYPE NULL\n");
+                break;
+        }
+    }
+
+    /* local */
+    for (uint32 i = 0; i < local_count; i++) {
+        switch (func->local_types[i]) {
+            case VALUE_TYPE_I32:
+            case VALUE_TYPE_F32:
+                fprintf(stderr, "%u, ", *(uint32 *)lp);
+                lp++;
+                break;
+            case VALUE_TYPE_I64:
+            case VALUE_TYPE_F64:
+                fprintf(stderr, "%lu, ", *(uint64 *)lp);
+                lp += 2;
+                break;
+            default:
+                printf("TYPE NULL\n");
+                break;
+        }
+    }
+    fprintf(stderr, "]\n");
+}
+
+
+static void
+debug_label_stack(WASMInterpFrame *frame)
+{
+    WASMBranchBlock *csp = frame->csp_bottom;
+    uint32 csp_num = frame->csp - csp;
+    
+    fprintf(stderr, "label stack: [\n");
+    for (int i = 0; i < csp_num; i++, csp++) {
+        // uint8 *begin_addr;
+        fprintf(stderr, "\t{%d",
+            // csp->begin_addr == NULL ? -1 : csp->begin_addr - wasm_get_func_code(frame->function);
+            get_addr_offset(csp->begin_addr, wasm_get_func_code(frame->function))
+        );
+
+        // uint8 *target_addr;
+        fprintf(stderr, ", %d",
+            get_addr_offset(csp->target_addr, wasm_get_func_code(frame->function))
+        );
+
+        // uint32 *frame_sp;
+        fprintf(stderr, ", %d",
+            get_addr_offset(csp->frame_sp, frame->sp_bottom)
+        );
+
+        // uint32 *frame_tsp
+        // // fprintf(stderr, ", %d",
+        // //     get_addr_offset(csp->frame_tsp, frame->tsp_bottom)
+        // );
+
+        // uint32 cell_num;
+        fprintf(stderr, ", %d", csp->cell_num);
+
+        // uint32 count;
+        // fprintf(stderr, ", %d}\n", csp->count);
+    }
+    fprintf(stderr, "]\n");
 }

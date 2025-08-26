@@ -9,6 +9,7 @@
 #include "bh_platform.h"
 #include "bh_hashmap.h"
 #include "bh_assert.h"
+#include <wasmig/state.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -264,6 +265,9 @@ struct WASMFunction {
     uint8 *consts;
     uint32 const_cell_num;
 #endif
+
+    bool is_restore_frame;
+    CodePos return_pos;
 
 #if WASM_ENABLE_FAST_JIT != 0 || WASM_ENABLE_JIT != 0 \
     || WASM_ENABLE_WAMR_COMPILER != 0
