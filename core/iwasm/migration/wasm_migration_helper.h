@@ -58,7 +58,7 @@ int debug_memories(WASMModuleInstance *module);
  * @param exec_env execution environment
  * @param frame current frame
  */
-void debug_frame_info(WASMExecEnv* exec_env, WASMInterpFrame *frame);
+void debug_frame_info(WASMExecEnv* exec_env, WASMRuntimeFrame *frame);
 
 /**
  * Debug and print function opcodes

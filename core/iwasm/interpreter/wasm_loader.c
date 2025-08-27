@@ -12,6 +12,8 @@
 #include <wasmig/table_v3.h>
 #include <wasmig/registry.h>
 #include <wasmig/migration.h>
+#include "../migration/wasm_migration_helper.h"
+#include "../migration/wasm_restore.h"
 #include "../common/wasm_native.h"
 #include "../common/wasm_memory.h"
 #if WASM_ENABLE_DEBUG_INTERP != 0
@@ -3596,7 +3598,9 @@ load_from_sections(WASMModule *module, WASMSection *sections,
             WASMFunction *func = module->functions[frame->pc.fidx - module->import_function_count];
             func->is_restore_frame = true;
             func->return_pos = frame->pc;
-            csp_call_stack.frames[i] = (WASMCSPFrame){*frame, 0, NULL};
+            csp_call_stack.frames[i].entry = *frame;
+            csp_call_stack.frames[i].csp_size = 0;
+            csp_call_stack.frames[i].csp = NULL;
             func->frame = &csp_call_stack.frames[i];
         }
     }
@@ -4984,15 +4988,6 @@ typedef struct BranchBlock {
      * and stack cell num. */
     bool is_stack_polymorphic;
 } BranchBlock;
-
-/* CSP entry for restoration purposes - different from migration CSPEntry */
-typedef struct CSPEntry {
-    uint8 label_type;
-    uint8 *start_addr;
-    uint8 *target_addr;
-    uint32 sp_offset;
-    uint32 cell_num;
-} CSPEntry;
 
 typedef struct WASMLoaderContext {
     /* frame ref stack */
