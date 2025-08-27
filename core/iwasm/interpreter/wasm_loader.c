@@ -3586,25 +3586,27 @@ load_from_sections(WASMModule *module, WASMSection *sections,
 #endif
 
     // Get call stack to emulate control stack
-    // WASMCSPFrameStack* csp_call_stack = load_wasm_call_stack();
+    WASMCSPFrameStack* csp_call_stack = load_wasm_call_stack();
     wasmig_debug("Restoring control stack");
-    WASMCSPFrameStack csp_call_stack;
+    // WASMCSPFrameStack csp_call_stack;
     if (get_restore_flag()) {
+        csp_call_stack = realloc(csp_call_stack, sizeof(WASMCSPFrameStack));
         CallStack call_stack = wasmig_restore_stack();
-        csp_call_stack.size = call_stack.size;
-        csp_call_stack.frames = malloc(sizeof(WASMCSPFrame) * call_stack.size);
+        csp_call_stack->size = call_stack.size;
+        csp_call_stack->frames = malloc(sizeof(WASMCSPFrame) * call_stack.size);
 
         // Set restore information to WASMFunction
         for (size_t i = 0; i < call_stack.size; i++) {
             CallStackEntry *frame = &call_stack.entries[i];
             WASMFunction *func = module->functions[frame->pc.fidx - module->import_function_count];
+            WASMCSPFrame *csp_frame = &csp_call_stack->frames[i];
             wasmig_debug("Restoring frame %d: (fidx=%d, offset=%d)", i, frame->pc.fidx, frame->pc.offset);
             func->is_restore_frame = true;
             func->return_pos = frame->pc;
-            csp_call_stack.frames[i].entry = *frame;
-            csp_call_stack.frames[i].csp_size = 0;
-            csp_call_stack.frames[i].csp = NULL;
-            func->frame = &csp_call_stack.frames[i];
+            csp_frame->entry = *frame;
+            csp_frame->csp_size = 0;
+            csp_frame->csp = NULL;
+            func->frame = csp_frame;
         }
     }
 
@@ -3625,13 +3627,9 @@ load_from_sections(WASMModule *module, WASMSection *sections,
     }
 
     // Store control stack to global
-    // if (get_restore_flag()) {
-    //     if (!store_wasm_call_stack(&csp_call_stack)) {
-    //         set_error_buf(error_buf, error_buf_size,
-    //                       "store wasm call stack failed");
-    //         return false;
-    //     }
-    // }
+    if (get_restore_flag()) {
+        store_wasm_call_stack(csp_call_stack);
+    }
 
     if (!module->possible_memory_grow) {
         WASMMemoryImport *memory_import;
