@@ -6513,14 +6513,14 @@ fail:
             goto fail;                                               \
     } while (0)
 
-#define PUSH_CSP_FOR_RESTORE(label_type, _start_addr, cell_num)              \
+#define PUSH_CSP_FOR_RESTORE(label_type, _start_addr, _cell_num)              \
     do {                                                                    \
         if (func->return_pos.offset <= offset) {                           \
-            csp[cur_stack_height]->label_type = label_type;                \
-            csp[cur_stack_height]->start_addr = _start_addr;                \
-            csp[cur_stack_height]->target_addr = NULL;                      \
-            csp[cur_stack_height]->sp_offset = loader_ctx->stack_cell_num; \
-            csp[cur_stack_height]->cell_num = cell_num;                     \
+            csp[cur_stack_height].label_type = label_type;                \
+            csp[cur_stack_height].begin_addr = _start_addr;                \
+            csp[cur_stack_height].target_addr = NULL;                      \
+            csp[cur_stack_height].sp_offset = loader_ctx->stack_cell_num; \
+            csp[cur_stack_height].cell_num = _cell_num;                     \
         }                                                                   \
         cur_stack_height++;                                                     \
     } while (0);
@@ -6530,7 +6530,7 @@ fail:
         if (offset < func->return_pos.offset) {                                 \
            if (cur_stack_height == seen_stack_height) {                              \
                 if (csp->label_type == LABEL_TYPE_LOOP) {                       \
-                    csp->target_addr = csp->start_addr;                         \
+                    csp->target_addr = csp->begin_addr;                         \
                 } else {                                                        \
                     csp->target_addr = end_addr;                                \
                 }                                                               \
@@ -7153,6 +7153,7 @@ wasm_loader_prepare_bytecode(WASMModule *module, WASMFunction *func,
     bool return_value = false;
     WASMLoaderContext *loader_ctx;
     BranchBlock *frame_csp_tmp;
+    uint32 csp_cell_num;
 #if WASM_ENABLE_FAST_INTERP != 0
     uint8 *func_const_end, *func_const = NULL;
     int16 operand_offset = 0;

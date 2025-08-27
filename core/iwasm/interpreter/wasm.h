@@ -275,7 +275,7 @@ struct WASMFunction {
     // CSP
     bool is_restore_frame;
     CodePos return_pos;
-    WASMCSPFrameStack *frame;
+    WASMCSPFrame *frame;
 
 #if WASM_ENABLE_FAST_JIT != 0 || WASM_ENABLE_JIT != 0 \
     || WASM_ENABLE_WAMR_COMPILER != 0
