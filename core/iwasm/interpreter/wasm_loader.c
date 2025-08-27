@@ -3583,11 +3583,12 @@ load_from_sections(WASMModule *module, WASMSection *sections,
 #endif
 
     // Get call stack to emulate control stack
-    WASMCSPFrameStack* csp_call_stack = load_wasm_call_stack();
+    // WASMCSPFrameStack* csp_call_stack = load_wasm_call_stack();
+    WASMCSPFrameStack csp_call_stack;
     if (get_restore_flag()) {
         CallStack call_stack = wasmig_restore_stack();
-        csp_call_stack->size = call_stack.size;
-        csp_call_stack->frames = malloc(sizeof(WASMCSPFrame) * call_stack.size);
+        csp_call_stack.size = call_stack.size;
+        csp_call_stack.frames = malloc(sizeof(WASMCSPFrame) * call_stack.size);
 
         // Set restore information to WASMFunction
         for (size_t i = 0; i < call_stack.size; i++) {
@@ -3595,7 +3596,7 @@ load_from_sections(WASMModule *module, WASMSection *sections,
             WASMFunction *func = module->functions[frame->pc.fidx - module->import_function_count];
             func->is_restore_frame = true;
             func->return_pos = frame->pc;
-            csp_call_stack.frames[i] = WASMCSPFrame{*frame, 0, NULL};
+            csp_call_stack.frames[i] = (WASMCSPFrame){*frame, 0, NULL};
             func->frame = &csp_call_stack.frames[i];
         }
     }
@@ -6517,16 +6518,14 @@ fail:
             goto fail;                                               \
     } while (0)
 
-#define PUSH_CSP_FOR_RESTORE(label_type, start_addr, cell_num)              \
+#define PUSH_CSP_FOR_RESTORE(label_type, _start_addr, cell_num)              \
     do {                                                                    \
         if (func->return_pos.offset <= offset) {                           \
-            csp[cur_stack_height] = (CSPEntry){                         \
-                .label_type = label_type,                                   \
-                .start_addr = start_addr,                                   \
-                .target_addr = NULL,                                           \
-                .sp_offset = loader_ctx->stack_cell_num,                \
-                .cell_num = cell_num,                                     \
-            };                                                              \
+            csp[cur_stack_height]->label_type = label_type;                \
+            csp[cur_stack_height]->start_addr = _start_addr;                \
+            csp[cur_stack_height]->target_addr = NULL;                      \
+            csp[cur_stack_height]->sp_offset = loader_ctx->stack_cell_num; \
+            csp[cur_stack_height]->cell_num = cell_num;                     \
         }                                                                   \
         cur_stack_height++;                                                     \
     } while (0);
