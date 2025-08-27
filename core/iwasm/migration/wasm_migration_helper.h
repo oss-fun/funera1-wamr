@@ -58,7 +58,7 @@ int debug_memories(WASMModuleInstance *module);
  * @param exec_env execution environment
  * @param frame current frame
  */
-void debug_frame_info(WASMExecEnv* exec_env, WASMInterpFrame *frame);
+void debug_frame_info(WASMExecEnv* exec_env, WASMRuntimeFrame *frame);
 
 /**
  * Debug and print function opcodes
@@ -96,19 +96,30 @@ Array8 get_type_stack(uint32_t fidx, uint32_t _offset, bool is_top_frame);
 uint32 wamr_get_stack_size(Array8 type_stack);
 
 typedef struct CSPEntry {
+    uint8 label_type;
     uint8* begin_addr;
     uint8* target_addr;
-    uint32 param_cell_num;
+    uint32 sp_offset;
     uint32 cell_num;
 } CSPEntry;
 
-typedef struct WASMStackFrameCSP {
-    CallStackEntry entry;
+typedef struct WASMCSPFrame {
+    CallStackEntry entry;  // ポインタではなく値として保存
+    uint32 csp_size;
     CSPEntry* csp;
-} WASMStackFrameCSP;
+} WASMCSPFrame;
 
-WASMStackFrameCSP* load_wasm_call_stack();
+typedef struct WASMCSPFrameStack {
+    uint32 size;
+    WASMCSPFrame* frames;
+} WASMCSPFrameStack;
 
+WASMCSPFrameStack* load_wasm_call_stack();
+// bool store_wasm_call_stack(WASMCSPFrameStack* stack, int size);
+
+void store_wasm_call_stack(WASMCSPFrameStack* stack);
+
+CSPEntry* csp_entry_clone(CSPEntry* src, uint32 csp_height);
 
 #ifdef __cplusplus
 }
