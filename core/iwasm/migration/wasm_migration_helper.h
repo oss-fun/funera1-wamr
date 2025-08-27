@@ -102,13 +102,21 @@ typedef struct CSPEntry {
     uint32 cell_num;
 } CSPEntry;
 
-typedef struct WASMStackFrameCSP {
+typedef struct WASMCSPFrame {
     CallStackEntry entry;
+    int csp_size;
     CSPEntry* csp;
-} WASMStackFrameCSP;
+} WASMCSPFrame;
 
-WASMStackFrameCSP* load_wasm_call_stack();
+typedef struct WASMCSPFrameStack {
+    uint32 size;
+    WASMCSPFrame* frames;
+} WASMCSPFrameStack;
 
+WASMCSPFrameStack* load_wasm_call_stack();
+bool store_wasm_call_stack(WASMCSPFrameStack* stack, int size);
+
+CSPEntry* csp_entry_clone(CSPEntry* src, uint32 csp_height);
 
 #ifdef __cplusplus
 }

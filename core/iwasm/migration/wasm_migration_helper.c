@@ -241,7 +241,26 @@ debug_label_stack(WASMInterpFrame *frame)
     fprintf(stderr, "]\n");
 }
 
-static WASMStackFrameCSP* WASMCallStack;
-WASMStackFrameCSP* load_wasm_call_stack() {
+static WASMCSPFrameStack* WASMCallStack;
+WASMCSPFrameStack* load_wasm_call_stack() {
     return WASMCallStack;
+}
+
+// Clone CSPEntry array
+CSPEntry* csp_entry_clone(CSPEntry* src, uint32 csp_height) {
+    if (!src) return NULL;
+
+    CSPEntry* dst = malloc(sizeof(CSPEntry) * csp_height);
+    if (!dst) return NULL;
+
+    memcpy(dst, src, sizeof(CSPEntry) * csp_height);
+    return dst;
+}
+
+bool store_wasm_call_stack(WASMCSPFrameStack* stack) {
+    WASMCSPFrameStack *frame_stack = load_wasm_call_stack();
+    frame_stack = realloc(frame_stack, sizeof(WASMCSPFrameStack) * stack->size);
+    memcpy(frame_stack, stack, sizeof(WASMCSPFrameStack) * stack->size);
+
+    return true;
 }

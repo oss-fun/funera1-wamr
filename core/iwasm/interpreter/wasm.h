@@ -18,7 +18,8 @@ extern "C" {
 
 typedef struct CSPEntry CSPEntry;
 
-typedef struct WASMStackFrameCSP WASMStackFrameCSP;
+typedef struct WASMCSPFrame WASMCSPFrame;
+typedef struct WASMCSPFrameStack WASMCSPFrameStack;
 
 /** Value Type */
 #define VALUE_TYPE_I32 0x7F
@@ -274,7 +275,7 @@ struct WASMFunction {
     // CSP
     bool is_restore_frame;
     CodePos return_pos;
-    WASMStackFrameCSP *frame;
+    WASMCSPFrameStack *frame;
 
 #if WASM_ENABLE_FAST_JIT != 0 || WASM_ENABLE_JIT != 0 \
     || WASM_ENABLE_WAMR_COMPILER != 0

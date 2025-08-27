@@ -11,6 +11,7 @@
 #include "wasm_runtime.h"
 #include <wasmig/table_v3.h>
 #include <wasmig/registry.h>
+#include <wasmig/migration.h>
 #include "../common/wasm_native.h"
 #include "../common/wasm_memory.h"
 #if WASM_ENABLE_DEBUG_INTERP != 0
@@ -3581,6 +3582,24 @@ load_from_sections(WASMModule *module, WASMSection *sections,
     handle_table = wasm_interp_get_handle_table();
 #endif
 
+    // Get call stack to emulate control stack
+    WASMCSPFrameStack* csp_call_stack = load_wasm_call_stack();
+    if (get_restore_flag()) {
+        CallStack call_stack = wasmig_restore_stack();
+        csp_call_stack->size = call_stack.size;
+        csp_call_stack->frames = malloc(sizeof(WASMCSPFrame) * call_stack.size);
+
+        // Set restore information to WASMFunction
+        for (size_t i = 0; i < call_stack.size; i++) {
+            CallStackEntry *frame = &call_stack.entries[i];
+            WASMFunction *func = module->functions[frame->pc.fidx - module->import_function_count];
+            func->is_restore_frame = true;
+            func->return_pos = frame->pc;
+            csp_call_stack.frames[i] = WASMCSPFrame{*frame, 0, NULL};
+            func->frame = &csp_call_stack.frames[i];
+        }
+    }
+
     for (i = 0; i < module->function_count; i++) {
         WASMFunction *func = module->functions[i];
         if (!wasm_loader_prepare_bytecode(module, func, i, error_buf,
@@ -3595,6 +3614,15 @@ load_from_sections(WASMModule *module, WASMSection *sections,
             return false;
         }
     }
+
+    // Store control stack to global
+    // if (get_restore_flag()) {
+    //     if (!store_wasm_call_stack(&csp_call_stack)) {
+    //         set_error_buf(error_buf, error_buf_size,
+    //                       "store wasm call stack failed");
+    //         return false;
+    //     }
+    // }
 
     if (!module->possible_memory_grow) {
         WASMMemoryImport *memory_import;
@@ -6495,7 +6523,7 @@ fail:
             csp[cur_stack_height] = (CSPEntry){                         \
                 .label_type = label_type,                                   \
                 .start_addr = start_addr,                                   \
-                .end_addr = NULL,                                           \
+                .target_addr = NULL,                                           \
                 .sp_offset = loader_ctx->stack_cell_num,                \
                 .cell_num = cell_num,                                     \
             };                                                              \
@@ -7191,7 +7219,7 @@ re_scan:
     uint32 offset = 0;
 
     CSPEntry csp[1024];
-    uint32 cur_stack_height = 0, seen_stack_height = 0;
+    uint32 cur_stack_height = 0, seen_stack_height = 0, csp_height = 0;
     PUSH_CSP(LABEL_TYPE_FUNCTION, func_block_type, p);
     PUSH_CSP_FOR_RESTORE(LABEL_TYPE_FUNCTION, p, func->ret_cell_num);
 
@@ -10106,8 +10134,10 @@ re_scan:
         wasmig_address_map_set_bidirect(metadata_address_map, fidx, offset, p);
 
         // update seen_stack_height
-        if (offset == func->return_pos.offset) 
+        if (offset == func->return_pos.offset) {
+            csp_height = cur_stack_height;
             seen_stack_height = cur_stack_height;
+        }
 
 #if WASM_ENABLE_FAST_INTERP != 0
         last_op = opcode;
@@ -10116,6 +10146,8 @@ re_scan:
     
     // save metadata
     wasmig_address_map_save(metadata_address_map);
+    func->frame->csp_size = csp_height;
+    func->frame->csp = csp_entry_clone(csp, csp_height);
 
     if (loader_ctx->csp_num > 0) {
         if (cur_func_idx < module->function_count - 1)
