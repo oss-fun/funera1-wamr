@@ -81,7 +81,7 @@ _restore_value_stacks(WASMInterpFrame *frame, WASMFunctionInstance *func, CallSt
 }
 
 static void
-_restore_label_stack(WASMInterpFrame *frame, WASMCSPFrame *csp_frame)
+_restore_label_stack_v1(WASMInterpFrame *frame, WASMCSPFrame *csp_frame)
 {
     // ラベルスタックのサイズ設定
     CallStackEntry *entry = &csp_frame->entry;
@@ -146,6 +146,35 @@ _restore_label_stack(WASMInterpFrame *frame, WASMCSPFrame *csp_frame)
     wasmig_info("restore label stack");
 }
 
+// restore label stack without dumped state
+static void
+_restore_label_stack_v2(WASMInterpFrame *frame, WASMCSPFrame *csp_frame)
+{
+    // ラベルスタックのサイズ設定
+    uint32 ctrl_stack_size = csp_frame->csp_size;
+    frame->csp = frame->csp_bottom + ctrl_stack_size;
+
+    // ラベルスタックの復元
+    WASMBranchBlock *csp = frame->csp_bottom;
+    for (int i = 0; i < ctrl_stack_size; ++i, ++csp) {
+        uint64 offset;
+        CSPEntry *csp_entry = &csp_frame->csp[i];
+
+        // begin_addr の復元
+        csp->begin_addr = csp_entry->begin_addr;
+
+        // target_addr の復元
+        csp->target_addr = csp_entry->target_addr;
+
+        // frame_sp の復元
+        csp->frame_sp = set_addr_offset(frame->sp_bottom, csp_entry->sp_offset);
+
+        // cell_num の復元
+        csp->cell_num = csp_entry->cell_num;
+    }
+    wasmig_info("restore label stack");
+}
+
 static void
 _restore_frame(WASMExecEnv *exec_env, WASMInterpFrame *frame, WASMCSPFrame *csp)
 {
@@ -162,7 +191,7 @@ _restore_frame(WASMExecEnv *exec_env, WASMInterpFrame *frame, WASMCSPFrame *csp)
     _restore_value_stacks(frame, func, &csp->entry);
 
     // restore label stack
-    _restore_label_stack(frame, csp);
+    _restore_label_stack_v2(frame, csp);
 }
 
 // Allocate frame
