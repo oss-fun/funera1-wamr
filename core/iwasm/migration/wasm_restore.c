@@ -183,14 +183,14 @@ _restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, WASM
 
     // Iterate call stack entries
     for (int i = 0; i < cs->size; i++) {
-        WASMCSPFrame *frame = &cs->frames[i];
+        WASMCSPFrame *csp_frame = &cs->frames[i];
         // CallStackEntry *entry = &cs->frames[i].entry;
         
         // allocate frame
-        frame = _create_frame(exec_env, module_inst, frame->entry.pc, prev_frame);
+        frame = _create_frame(exec_env, module_inst, csp_frame->entry.pc, prev_frame);
         
         // restore frame
-        _restore_frame(exec_env, frame, frame);
+        _restore_frame(exec_env, frame, csp_frame);
         
         prev_frame = frame;
     }

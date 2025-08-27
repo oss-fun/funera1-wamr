@@ -3597,13 +3597,13 @@ load_from_sections(WASMModule *module, WASMSection *sections,
 
         // Set restore information to WASMFunction
         for (size_t i = 0; i < call_stack.size; i++) {
-            CallStackEntry *frame = &call_stack.entries[i];
-            WASMFunction *func = module->functions[frame->pc.fidx - module->import_function_count];
+            CallStackEntry frame = call_stack.entries[i];
+            WASMFunction *func = module->functions[frame.pc.fidx - module->import_function_count];
             WASMCSPFrame *csp_frame = &csp_call_stack->frames[i];
-            wasmig_debug("Restoring frame %d: (fidx=%d, offset=%d)", i, frame->pc.fidx, frame->pc.offset);
+            wasmig_debug("Restoring frame %d: (fidx=%d, offset=%d)", i, frame.pc.fidx, frame.pc.offset);
             func->is_restore_frame = true;
-            func->return_pos = frame->pc;
-            csp_frame->entry = *frame;
+            func->return_pos = frame.pc;
+            csp_frame->entry = frame;  // 値をコピー
             csp_frame->csp_size = 0;
             csp_frame->csp = NULL;
             func->frame = csp_frame;

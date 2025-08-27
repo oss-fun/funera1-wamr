@@ -104,7 +104,7 @@ typedef struct CSPEntry {
 } CSPEntry;
 
 typedef struct WASMCSPFrame {
-    CallStackEntry entry;
+    CallStackEntry entry;  // ポインタではなく値として保存
     uint32 csp_size;
     CSPEntry* csp;
 } WASMCSPFrame;
@@ -118,6 +118,8 @@ WASMCSPFrameStack* load_wasm_call_stack();
 // bool store_wasm_call_stack(WASMCSPFrameStack* stack, int size);
 
 void store_wasm_call_stack(WASMCSPFrameStack* stack);
+
+CSPEntry* csp_entry_clone(CSPEntry* src, uint32 csp_height);
 
 #ifdef __cplusplus
 }
