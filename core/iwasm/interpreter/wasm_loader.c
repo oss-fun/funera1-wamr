@@ -6519,14 +6519,14 @@ fail:
 
 #define PUSH_CSP_FOR_RESTORE(_label_type, _start_addr, _cell_num)              \
     do {                                                                    \
-        if (func->if_restore_frame) {                                           \
+        if (func->is_restore_frame) {                                           \
             wasmig_debug("PUSH_CSP_FOR_RESTORE: label_type=%d, stack_size=%d->%d", \
                          _label_type, cur_stack_height, cur_stack_height+1);             \
             if (func->return_pos.offset <= offset) {                           \
                 csp[cur_stack_height].label_type = _label_type;                \
                 csp[cur_stack_height].begin_addr = _start_addr;                \
                 csp[cur_stack_height].target_addr = NULL;                      \
-                csp[cur_stack_height].sp_offset = loader_ctx->stack_cell_num; \
+                csp[cur_stack_height].frame_sp = loader_ctx->stack_cell_num; \
                 csp[cur_stack_height].cell_num = _cell_num;                     \
             }                                                                   \
             cur_stack_height++;                                                     \
@@ -6535,7 +6535,7 @@ fail:
     
 #define POP_CSP_FOR_RESTORE(end_addr)                                           \
     do {                                                                        \
-        if (func->if_restore_frame) {                                           \
+        if (func->is_restore_frame) {                                           \
             wasmig_debug("POP_CSP_FOR_RESTORE: label_type=%d, stack_size=%d->%d", \
                          csp->label_type, cur_stack_height, cur_stack_height-1); \
             if (offset < func->return_pos.offset) {                                 \

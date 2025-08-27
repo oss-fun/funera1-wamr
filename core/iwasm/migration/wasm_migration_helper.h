@@ -99,7 +99,7 @@ typedef struct CSPEntry {
     uint8 label_type;
     uint8* begin_addr;
     uint8* target_addr;
-    uint32 sp_offset;
+    uint32 frame_sp;
     uint32 cell_num;
 } CSPEntry;
 

@@ -81,60 +81,84 @@ _restore_value_stacks(WASMInterpFrame *frame, WASMFunctionInstance *func, CallSt
 }
 
 static void
-_restore_label_stack(WASMInterpFrame *frame, CallStackEntry *entry)
+_restore_label_stack(WASMInterpFrame *frame, WASMCSPFrame *csp_frame)
 {
     // ラベルスタックのサイズ設定
+    CallStackEntry *entry = &csp_frame->entry;
     uint32 ctrl_stack_size = entry->label_stack.size;
+    if (ctrl_stack_size != csp_frame->csp_size) {
+        wasmig_error("control stack size mismatch: (expect=%d, actual=%d)",
+                     ctrl_stack_size, csp_frame->csp_size);
+    }
     frame->csp = frame->csp_bottom + ctrl_stack_size;
 
     // ラベルスタックの復元
     WASMBranchBlock *csp = frame->csp_bottom;
     for (int i = 0; i < ctrl_stack_size; ++i, ++csp) {
         uint64 offset;
+        CSPEntry *csp_entry = &csp_frame->csp[i];
 
         // begin_addr の復元
         offset = entry->label_stack.begins[i];
         csp->begin_addr = set_addr_offset(wasm_get_func_code(frame->function), offset);
+        if (csp->begin_addr != csp_entry->begin_addr) {
+            wasmig_error("control stack begin_addr mismatch: (expect=%p, actual=%p)",
+                         csp_entry->begin_addr, csp->begin_addr);
+        }
 
         // target_addr の復元
         offset = entry->label_stack.targets[i];
         csp->target_addr = set_addr_offset(wasm_get_func_code(frame->function), offset);
+        if (csp->target_addr != csp_entry->target_addr) {
+            wasmig_error("control stack target_addr mismatch: (expect=%p, actual=%p)",
+                         csp_entry->target_addr, csp->target_addr);
+        }
 
         // frame_sp の復元
         offset = entry->label_stack.stack_pointers[i];
         csp->frame_sp = set_addr_offset(frame->sp_bottom, offset);
+        if (csp->frame_sp != csp_entry->frame_sp) {
+            wasmig_error("control stack frame_sp mismatch: (expect=%p, actual=%p)",
+                         csp_entry->frame_sp, csp->frame_sp);
+        }
 
         // cell_num の復元
         offset = entry->label_stack.cell_nums[i];
         csp->cell_num = offset;
+        if (csp->cell_num != csp_entry->cell_num) {
+            wasmig_error("control stack cell_num mismatch: (expect=%d, actual=%d)",
+                         csp_entry->cell_num, csp->cell_num);
+        }
     }
+    wasmig_info("Correct restore label stack");
     wasmig_info("restore label stack");
 }
 
-_restore_frame(WASMExecEnv *exec_env, WASMInterpFrame *frame, CallStackEntry *entry)
+static void
+_restore_frame(WASMExecEnv *exec_env, WASMInterpFrame *frame, WASMCSPFrame *csp)
 {
     WASMModuleInstance *module_inst = exec_env->module_inst;
     WASMFunctionInstance *func = frame->function;
 
     // restore a program counter
-    _restore_program_counter(frame, entry);
+    _restore_program_counter(frame, &csp->entry);
 
     // Initialize frame boundaries
     _initialize_frame_boundaries(frame, func);
 
     // restore locals and value stack
-    _restore_value_stacks(frame, func, entry);
+    _restore_value_stacks(frame, func, &csp->entry);
 
     // restore label stack
-    _restore_label_stack(frame, entry);
+    _restore_label_stack(frame, csp);
 }
 
 // Allocate frame
 static WASMInterpFrame *
 _create_frame(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, 
-              CallStackEntry *entry, WASMInterpFrame *prev_frame)
+              CodePos pc, WASMInterpFrame *prev_frame)
 {
-    WASMFunctionInstance *function = module_inst->e->functions + entry->pc.fidx;
+    WASMFunctionInstance *function = module_inst->e->functions + pc.fidx;
     
     // Calculate frame size
     uint32 all_cell_num = (uint32)function->param_cell_num
@@ -153,19 +177,20 @@ _create_frame(WASMExecEnv *exec_env, WASMModuleInstance *module_inst,
 }
 
 static void
-_restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, CallStack *cs)
+_restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, WASMCSPFrameStack *cs)
 {
     WASMInterpFrame *frame, *prev_frame = wasm_exec_env_get_cur_frame(exec_env);
 
     // Iterate call stack entries
     for (int i = 0; i < cs->size; i++) {
-        CallStackEntry *entry = &cs->entries[i];
+        WASMCSPFrame *frame = &cs->frames[i];
+        // CallStackEntry *entry = &cs->frames[i].entry;
         
         // allocate frame
-        frame = _create_frame(exec_env, module_inst, entry, prev_frame);
+        frame = _create_frame(exec_env, module_inst, frame->entry.pc, prev_frame);
         
         // restore frame
-        _restore_frame(exec_env, frame, entry);
+        _restore_frame(exec_env, frame, frame);
         
         prev_frame = frame;
     }
@@ -184,12 +209,17 @@ wasm_restore_stack(WASMExecEnv **_exec_env)
     WASMModuleInstance *module_inst = (WASMModuleInstance *)exec_env->module_inst;
     
     // コールスタックの復元
-    CallStack cs = wasmig_restore_stack();
-    wasmig_debug("restore_stack: cs.size: %d\n", cs.size);
+    // CallStack cs = wasmig_restore_stack();
+    WASMCSPFrameStack* cs = load_wasm_call_stack();
+    if (cs == NULL) {
+        wasmig_error("Failed to load call stack");
+        return NULL;
+    }
+    wasmig_debug("restore_stack: cs.size: %d\n", cs->size);
     // print_call_stack(&cs);
     
     // 全フレームの復元
-    _restore_all_frames(exec_env, module_inst, &cs);
+    _restore_all_frames(exec_env, module_inst, cs);
     
     _exec_env = &exec_env;
     
