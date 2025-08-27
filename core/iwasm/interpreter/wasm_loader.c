@@ -6513,10 +6513,10 @@ fail:
             goto fail;                                               \
     } while (0)
 
-#define PUSH_CSP_FOR_RESTORE(label_type, _start_addr, _cell_num)              \
+#define PUSH_CSP_FOR_RESTORE(_label_type, _start_addr, _cell_num)              \
     do {                                                                    \
         if (func->return_pos.offset <= offset) {                           \
-            csp[cur_stack_height].label_type = label_type;                \
+            csp[cur_stack_height].label_type = _label_type;                \
             csp[cur_stack_height].begin_addr = _start_addr;                \
             csp[cur_stack_height].target_addr = NULL;                      \
             csp[cur_stack_height].sp_offset = loader_ctx->stack_cell_num; \

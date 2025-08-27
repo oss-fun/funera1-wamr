@@ -115,7 +115,7 @@ typedef struct WASMCSPFrameStack {
 } WASMCSPFrameStack;
 
 WASMCSPFrameStack* load_wasm_call_stack();
-bool store_wasm_call_stack(WASMCSPFrameStack* stack, int size);
+// bool store_wasm_call_stack(WASMCSPFrameStack* stack, int size);
 
 CSPEntry* csp_entry_clone(CSPEntry* src, uint32 csp_height);
 
