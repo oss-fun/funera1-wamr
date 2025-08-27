@@ -6518,13 +6518,13 @@ fail:
 #define PUSH_CSP_FOR_RESTORE(_label_type, _start_addr, _cell_num)              \
     do {                                                                    \
         if (func->is_restore_frame) {                                           \
-            wasmig_debug("PUSH_CSP_FOR_RESTORE: label_type=%d, stack_size=%d->%d", \
-                         _label_type, cur_stack_height, cur_stack_height+1);             \
-            if (func->return_pos.offset <= offset) {                           \
+            wasmig_debug("PUSH_CSP_FOR_RESTORE: offset=%d, label_type=%d, stack_size=%d->%d, sp_offset=%d", \
+                         offset, _label_type, cur_stack_height, cur_stack_height+1, loader_ctx->stack_cell_num);   \
+            if (offset <= func->return_pos.offset) {                           \
                 csp[cur_stack_height].label_type = _label_type;                \
                 csp[cur_stack_height].begin_addr = _start_addr;                \
                 csp[cur_stack_height].target_addr = NULL;                      \
-                csp[cur_stack_height].frame_sp = loader_ctx->stack_cell_num; \
+                csp[cur_stack_height].sp_offset = loader_ctx->stack_cell_num; \
                 csp[cur_stack_height].cell_num = _cell_num;                     \
             }                                                                   \
             cur_stack_height++;                                                     \
@@ -6536,14 +6536,15 @@ fail:
         if (func->is_restore_frame) {                                           \
             wasmig_debug("POP_CSP_FOR_RESTORE: label_type=%d, stack_size=%d->%d", \
                          csp->label_type, cur_stack_height, cur_stack_height-1); \
-            if (offset < func->return_pos.offset) {                                 \
+            if (func->return_pos.offset < offset) {                                 \
                if (cur_stack_height == seen_stack_height) {                              \
-                    if (csp->label_type == LABEL_TYPE_LOOP) {                       \
-                        csp->target_addr = csp->begin_addr;                         \
-                    } else {                                                        \
-                        csp->target_addr = end_addr;                                \
-                    }                                                               \
+                   wasmig_debug("\tseen_stack_height=%d", seen_stack_height);             \
                    seen_stack_height--;                                             \
+                    if (csp[seen_stack_height].label_type == LABEL_TYPE_LOOP) {                       \
+                        csp[seen_stack_height].target_addr = csp[seen_stack_height].begin_addr;                         \
+                    } else {                                                        \
+                        csp[seen_stack_height].target_addr = end_addr;                                \
+                    }                                                               \
                }                                                                    \
             }                                                                       \
             cur_stack_height--;                                                     \
@@ -10155,6 +10156,17 @@ re_scan:
         func->frame->csp_size = csp_height;
         wasmig_debug("starting csp_entry_clone...");
         func->frame->csp = csp_entry_clone(csp, csp_height);
+        
+        wasmig_debug("function: %d", fidx);
+        for (int i = 0; i < csp_height; i++) {
+            wasmig_debug("csp[%d]: label_type=%d, begin_addr=%p, target_addr=%p, sp_offset=%d, cell_num=%d", 
+                i, 
+                func->frame->csp[i].label_type, 
+                func->frame->csp[i].begin_addr,
+                func->frame->csp[i].target_addr,
+                func->frame->csp[i].sp_offset,
+                func->frame->csp[i].cell_num);
+        }
         wasmig_debug("Restored control stack for function %d", cur_func_idx);
     }
 

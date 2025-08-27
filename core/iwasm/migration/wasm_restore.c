@@ -89,6 +89,9 @@ _restore_label_stack(WASMInterpFrame *frame, WASMCSPFrame *csp_frame)
     if (ctrl_stack_size != csp_frame->csp_size) {
         wasmig_error("control stack size mismatch: (expect=%d, actual=%d)",
                      ctrl_stack_size, csp_frame->csp_size);
+    } else {
+        wasmig_info("control stack size match: (expect=%d, actual=%d)",
+                     ctrl_stack_size, csp_frame->csp_size);
     }
     frame->csp = frame->csp_bottom + ctrl_stack_size;
 
@@ -102,7 +105,7 @@ _restore_label_stack(WASMInterpFrame *frame, WASMCSPFrame *csp_frame)
         offset = entry->label_stack.begins[i];
         csp->begin_addr = set_addr_offset(wasm_get_func_code(frame->function), offset);
         if (csp->begin_addr != csp_entry->begin_addr) {
-            wasmig_error("control stack begin_addr mismatch: (expect=%p, actual=%p)",
+            wasmig_error("control stack begin_addr mismatch: (actual=%p, expect=%p)",
                          csp_entry->begin_addr, csp->begin_addr);
         }
 
@@ -110,23 +113,32 @@ _restore_label_stack(WASMInterpFrame *frame, WASMCSPFrame *csp_frame)
         offset = entry->label_stack.targets[i];
         csp->target_addr = set_addr_offset(wasm_get_func_code(frame->function), offset);
         if (csp->target_addr != csp_entry->target_addr) {
-            wasmig_error("control stack target_addr mismatch: (expect=%p, actual=%p)",
+            wasmig_error("control stack target_addr mismatch: (actual=%p, expect=%p)",
+                         csp_entry->target_addr, csp->target_addr);
+        } else {
+            wasmig_info("control stack target_addr match: (actual=%p, expect=%p)",
                          csp_entry->target_addr, csp->target_addr);
         }
 
         // frame_sp の復元
         offset = entry->label_stack.stack_pointers[i];
         csp->frame_sp = set_addr_offset(frame->sp_bottom, offset);
-        if (csp->frame_sp != csp_entry->frame_sp) {
-            wasmig_error("control stack frame_sp mismatch: (expect=%p, actual=%p)",
-                         csp_entry->frame_sp, csp->frame_sp);
+        if (offset != csp_entry->sp_offset) {
+            wasmig_error("control stack sp_offset mismatch: (actual=%d, expect=%d)",
+                         csp_entry->sp_offset, offset);
+        } else {
+            wasmig_info("control stack sp_offset match: (actual=%d, expect=%d)",
+                         csp_entry->sp_offset, offset);
         }
 
         // cell_num の復元
         offset = entry->label_stack.cell_nums[i];
         csp->cell_num = offset;
         if (csp->cell_num != csp_entry->cell_num) {
-            wasmig_error("control stack cell_num mismatch: (expect=%d, actual=%d)",
+            wasmig_error("control stack cell_num mismatch: (actual=%d, expect=%d)",
+                         csp_entry->cell_num, csp->cell_num);
+        } else {
+            wasmig_info("control stack cell_num match: (actual=%d, expect=%d)",
                          csp_entry->cell_num, csp->cell_num);
         }
     }
