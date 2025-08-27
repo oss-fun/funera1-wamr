@@ -12,6 +12,7 @@
 #include <wasmig/table_v3.h>
 #include <wasmig/registry.h>
 #include <wasmig/migration.h>
+#include <wasmig/log.h>
 #include "../migration/wasm_migration_helper.h"
 #include "../migration/wasm_restore.h"
 #include "../common/wasm_native.h"
@@ -3586,6 +3587,7 @@ load_from_sections(WASMModule *module, WASMSection *sections,
 
     // Get call stack to emulate control stack
     // WASMCSPFrameStack* csp_call_stack = load_wasm_call_stack();
+    wasmig_debug("Restoring control stack");
     WASMCSPFrameStack csp_call_stack;
     if (get_restore_flag()) {
         CallStack call_stack = wasmig_restore_stack();
@@ -3596,6 +3598,7 @@ load_from_sections(WASMModule *module, WASMSection *sections,
         for (size_t i = 0; i < call_stack.size; i++) {
             CallStackEntry *frame = &call_stack.entries[i];
             WASMFunction *func = module->functions[frame->pc.fidx - module->import_function_count];
+            wasmig_debug("Restoring frame %d: (fidx=%d, offset=%d)", i, frame->pc.fidx, frame->pc.offset);
             func->is_restore_frame = true;
             func->return_pos = frame->pc;
             csp_call_stack.frames[i].entry = *frame;
@@ -3605,6 +3608,7 @@ load_from_sections(WASMModule *module, WASMSection *sections,
         }
     }
 
+    wasmig_debug("prepare_bytecode");
     for (i = 0; i < module->function_count; i++) {
         WASMFunction *func = module->functions[i];
         if (!wasm_loader_prepare_bytecode(module, func, i, error_buf,
@@ -6515,29 +6519,37 @@ fail:
 
 #define PUSH_CSP_FOR_RESTORE(_label_type, _start_addr, _cell_num)              \
     do {                                                                    \
-        if (func->return_pos.offset <= offset) {                           \
-            csp[cur_stack_height].label_type = _label_type;                \
-            csp[cur_stack_height].begin_addr = _start_addr;                \
-            csp[cur_stack_height].target_addr = NULL;                      \
-            csp[cur_stack_height].sp_offset = loader_ctx->stack_cell_num; \
-            csp[cur_stack_height].cell_num = _cell_num;                     \
-        }                                                                   \
-        cur_stack_height++;                                                     \
+        if (func->if_restore_frame) {                                           \
+            wasmig_debug("PUSH_CSP_FOR_RESTORE: label_type=%d, stack_size=%d->%d", \
+                         _label_type, cur_stack_height, cur_stack_height+1);             \
+            if (func->return_pos.offset <= offset) {                           \
+                csp[cur_stack_height].label_type = _label_type;                \
+                csp[cur_stack_height].begin_addr = _start_addr;                \
+                csp[cur_stack_height].target_addr = NULL;                      \
+                csp[cur_stack_height].sp_offset = loader_ctx->stack_cell_num; \
+                csp[cur_stack_height].cell_num = _cell_num;                     \
+            }                                                                   \
+            cur_stack_height++;                                                     \
+        }                                                                        \
     } while (0);
     
 #define POP_CSP_FOR_RESTORE(end_addr)                                           \
     do {                                                                        \
-        if (offset < func->return_pos.offset) {                                 \
-           if (cur_stack_height == seen_stack_height) {                              \
-                if (csp->label_type == LABEL_TYPE_LOOP) {                       \
-                    csp->target_addr = csp->begin_addr;                         \
-                } else {                                                        \
-                    csp->target_addr = end_addr;                                \
-                }                                                               \
-               seen_stack_height--;                                             \
-           }                                                                    \
-        }                                                                       \
-        cur_stack_height--;                                                     \
+        if (func->if_restore_frame) {                                           \
+            wasmig_debug("POP_CSP_FOR_RESTORE: label_type=%d, stack_size=%d->%d", \
+                         csp->label_type, cur_stack_height, cur_stack_height-1); \
+            if (offset < func->return_pos.offset) {                                 \
+               if (cur_stack_height == seen_stack_height) {                              \
+                    if (csp->label_type == LABEL_TYPE_LOOP) {                       \
+                        csp->target_addr = csp->begin_addr;                         \
+                    } else {                                                        \
+                        csp->target_addr = end_addr;                                \
+                    }                                                               \
+                   seen_stack_height--;                                             \
+               }                                                                    \
+            }                                                                       \
+            cur_stack_height--;                                                     \
+        }                                                                        \
     } while (0);
 
 #define PUSH_CSP(label_type, block_type, _start_addr)                       \
@@ -10129,7 +10141,7 @@ re_scan:
         wasmig_address_map_set_bidirect(metadata_address_map, fidx, offset, p);
 
         // update seen_stack_height
-        if (offset == func->return_pos.offset) {
+        if (func->is_restore_frame && offset == func->return_pos.offset) {
             csp_height = cur_stack_height;
             seen_stack_height = cur_stack_height;
         }
@@ -10141,8 +10153,12 @@ re_scan:
     
     // save metadata
     wasmig_address_map_save(metadata_address_map);
-    func->frame->csp_size = csp_height;
-    func->frame->csp = csp_entry_clone(csp, csp_height);
+    if (func->is_restore_frame) {
+        func->frame->csp_size = csp_height;
+        wasmig_debug("starting csp_entry_clone...");
+        func->frame->csp = csp_entry_clone(csp, csp_height);
+        wasmig_debug("Restored control stack for function %d", cur_func_idx);
+    }
 
     if (loader_ctx->csp_num > 0) {
         if (cur_func_idx < module->function_count - 1)
