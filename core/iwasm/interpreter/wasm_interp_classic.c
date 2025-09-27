@@ -1242,10 +1242,10 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
     uint8 value_type;
     
     // Load stack tables for C/R
-    if (load_stack_tables() == 0) {
-        perror("Error:wasm_interp_func_bytecode:load_stack_tables failed\n");
-        return;
-    }
+    // if (load_stack_tables() == 0) {
+    //     perror("Error:wasm_interp_func_bytecode:load_stack_tables failed\n");
+    //     return;
+    // }
 
 #if !defined(OS_ENABLE_HW_BOUND_CHECK) \
     || WASM_CPU_SUPPORTS_UNALIGNED_ADDR_ACCESS == 0

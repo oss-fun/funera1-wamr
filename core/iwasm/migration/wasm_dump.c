@@ -24,29 +24,138 @@
 
 /* wasm_dump */
 
-static void
+bool load_metadata_stacks(uint32 fidx, uint32 offset, Stack* addr_stack, Stack* type_stack) {
+    StackStateMap m = wasmig_stack_state_map_registry_load(fidx);
+    if (!wasmig_stack_state_load_pair(m, offset, addr_stack, type_stack)) {
+        wasmig_error("failed to load metadata stack\n");
+        return false;
+    }
+    wasmig_stack_print(*addr_stack);
+    wasmig_stack_print(*type_stack);
+    return true;
+}
+
+bool materialize_stack_values(Stack addr_stack, Stack type_stack,
+                              uint32* sp,
+                              uint8* type_buf, uint32* value_buf, 
+                              uint32 stack_count, uint32 stack_size) {
+    uint32 stack_ptr = 0;
+    StackIterator addr_it = wasmig_stack_iterator_create(addr_stack);
+    StackIterator type_it = wasmig_stack_iterator_create(type_stack);
+    if (!addr_it || !type_it) {
+        wasmig_error("failed to create stack iterators\n");
+        if (addr_it) wasmig_stack_iterator_destroy(addr_it);
+        if (type_it) wasmig_stack_iterator_destroy(type_it);
+        return false;
+    }
+
+    stack_ptr = stack_size;
+    uint32 index = 0;
+    while (wasmig_stack_iterator_has_next(addr_it) && wasmig_stack_iterator_has_next(type_it)) {
+        index++;
+        uint64_t address = wasmig_stack_iterator_next(addr_it);
+        uint32 type = (uint32)wasmig_stack_iterator_next(type_it);
+
+        type_buf[stack_count - index] = type;
+        stack_ptr -= type;
+
+        switch (type) {
+            case 1: // i32
+            {
+                wasmig_debug("reconstruct stack[%u]: i32 %u\n", stack_ptr, (uint32)address);
+                uint32 value = (uint32)sp[(size_t)address];   // indexをsize_tに
+                value_buf[stack_ptr] = value;
+                wasmig_debug("value_buf[%u]: %u\n", stack_ptr, value);
+                break;
+            }
+            case 2: // i64
+            {
+                wasmig_debug("reconstruct stack[%u]: i64 %" PRIu64 "\n", stack_ptr, (uint64_t)address);
+                value_buf[stack_ptr]   = (uint32)sp[(size_t)address];
+                value_buf[stack_ptr+1] = (uint32)sp[(size_t)address + 1];
+                break;
+            }
+            default:
+                wasmig_error("unknown type: %d\n", type);
+                break;
+        }
+    }
+    wasmig_stack_iterator_destroy(addr_it);
+    wasmig_stack_iterator_destroy(type_it);
+    return true;
+}
+
+bool count_stack_entries(Stack type_stack, uint32* stack_count, uint32* stack_size) {
+    uint32 count = 0;
+    uint32 size = 0;
+    StackIterator it = wasmig_stack_iterator_create(type_stack);
+    if (!it) {
+        wasmig_error("failed to create type iterator");
+        return false;
+    }
+    while (wasmig_stack_iterator_has_next(it)) {
+        uint64_t t = wasmig_stack_iterator_next(it);
+        count++;
+        size += (uint32)t;
+    }
+    wasmig_stack_iterator_destroy(it);
+
+    *stack_count = count;
+    *stack_size = size;
+
+    return true;
+}
+
+static bool
 _setup_value_stacks(struct WASMInterpFrame *frame, CodePos call_pos, bool is_stack_top,
                    TypedArray *out_locals, TypedArray *out_value_stack)
 {
+    // wasmig_info("fidx: %d, offset: %d\n", call_pos.fidx, call_pos.offset);
+    if (!is_stack_top) 
+        call_pos.offset += 1;
+
     WASMFunctionInstance *func = frame->function;
+    Stack addr_stack, type_stack;
+    if (!load_metadata_stacks(call_pos.fidx, call_pos.offset, &addr_stack, &type_stack))
+        return false;
+
+    uint32 stack_size, stack_count;
+    if (!count_stack_entries(type_stack, &stack_count, &stack_size)) {
+        wasmig_error("failed count_stack_entries");
+        return false;
+    }
     uint32 local_count = func->param_count + func->local_count;
     uint32 local_size = func->param_cell_num + func->local_cell_num;
-
+    wasmig_info("stack_count=%d, stack_size=%d\n", stack_count, stack_size);
+    wasmig_info("local_count=%d, local_size=%d\n", local_count, local_size);
+    
     // get states
-    Array8 locals_types = get_local_types(call_pos.fidx);
-    Array8 value_stack_types = get_type_stack(call_pos.fidx, call_pos.offset, is_stack_top);
-    uint32 value_stack_size = wamr_get_stack_size(value_stack_types);
-    uint8* type_buf = value_stack_types.contents;
+    // Array8 locals_types = get_local_types(call_pos.fidx);
+    // Array8 value_stack_types = get_type_stack(call_pos.fidx, call_pos.offset, is_stack_top);
+    // uint32 value_stack_size = wamr_get_stack_size(value_stack_types);
+    // uint8* type_buf = value_stack_types.contents;
+
+    uint8* type_buf = malloc(stack_size * sizeof(uint8));
+    uint32* value_buf = malloc(stack_size * sizeof(uint32));
+    uint32* raw_stack = frame->lp;
+    if (!materialize_stack_values(addr_stack, type_stack, raw_stack, type_buf, value_buf, stack_count, stack_size))
+        return false;
 
     // restore stack
-    out_locals->types = locals_types;
-    out_locals->values = (Array32){local_size, frame->lp};
-    out_value_stack->types = value_stack_types; 
-    out_value_stack->values = (Array32){value_stack_size, frame->sp_bottom};
+    // out_locals->types = locals_types;
+    // out_locals->values = (Array32){local_size, frame->lp};
+    // out_value_stack->types = value_stack_types; 
+    // out_value_stack->values = (Array32){value_stack_size, frame->sp_bottom};
+    out_locals->types = (Array8){local_count, type_buf};
+    out_locals->values = (Array32){local_size, value_buf};
+    out_value_stack->types = (Array8){stack_count - local_count, type_buf + local_count};
+    out_value_stack->values = (Array32){stack_size - local_size, value_buf + local_size};
     
     // print log
     wasmig_info("locals: {count=%d, size=%d}\n", local_count, local_size);
-    wasmig_info("value_stack: {count=%d, size=%d}\n", value_stack_types.size, value_stack_size);
+    wasmig_info("value_stack: {count=%d, size=%d}\n", stack_count - local_count, stack_size - local_size);
+
+    return true;
 }
 
 static LabelStack
@@ -123,6 +232,8 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
     };
 
     // frame stackのサイズを保存
+    CallStack cs = {.size = call_stack_size, .entries = entries};
+    print_call_stack(&cs);
     wasmig_checkpoint_stack_v4(call_stack_size, entries);
     wasmig_info("Success to dump frame stack\n");
 

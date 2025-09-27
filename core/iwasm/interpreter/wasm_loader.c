@@ -5012,6 +5012,7 @@ typedef struct WASMLoaderContext {
     StackStateMap metadata_stack_map;
     Stack metadata_address_stack;
     Stack metadata_type_stack;
+    uint32 param_local_stack_cell_num;
 
 #if WASM_ENABLE_FAST_INTERP != 0
     /* frame offset stack */
@@ -5319,8 +5320,9 @@ wasm_loader_push_frame_ref(WASMLoaderContext *ctx, uint8 type, char *error_buf,
     
     /* push metadata stack */
     // TODO: must check if a pushed address is correct
-    ctx->metadata_address_stack = wasmig_stack_push(ctx->metadata_address_stack, ctx->stack_cell_num);
+    ctx->metadata_address_stack = wasmig_stack_push(ctx->metadata_address_stack, ctx->param_local_stack_cell_num);
     ctx->metadata_type_stack = wasmig_stack_push(ctx->metadata_type_stack, wasm_type_width(type));
+    ctx->param_local_stack_cell_num += wasm_type_width(type);
 
     *ctx->frame_ref++ = type;
     ctx->stack_cell_num++;
@@ -7225,6 +7227,24 @@ wasm_loader_prepare_bytecode(WASMModule *module, WASMFunction *func,
     loader_ctx->metadata_type_stack = wasmig_stack_create();
     AddressMap metadata_address_map = (!wasmig_address_map_exists() ? wasmig_address_map_create(0) : wasmig_address_map_load());
     Stack metadata_call_site_type_stack, metadata_call_site_address_stack;
+    
+    //  push local to metadata stack 
+    // wasmig_info("[prepare_bytecode] param count %d", param_count);
+    uint32 fidx = module->import_function_count + cur_func_idx;
+    loader_ctx->param_local_stack_cell_num = 0;
+    for (int i = 0; i < param_count; i++) {
+        // wasmig_debug("[prepare_bytecode] func %d, param %d, type: %d", fidx, i, param_types[i]);
+        loader_ctx->metadata_address_stack = wasmig_stack_push(loader_ctx->metadata_address_stack, loader_ctx->param_local_stack_cell_num);
+        loader_ctx->metadata_type_stack = wasmig_stack_push(loader_ctx->metadata_type_stack, wasm_type_width(param_types[i]));
+        loader_ctx->param_local_stack_cell_num += wasm_type_width(param_types[i]);
+    }
+    // wasmig_info("[prepare_bytecode] local count %d", local_count);
+    for (int i = 0; i < local_count; i++) {
+        // wasmig_info("[prepare_bytecode] func %d, local %d, type: %d", fidx, i, local_types[i]);
+        loader_ctx->metadata_address_stack = wasmig_stack_push(loader_ctx->metadata_address_stack, loader_ctx->param_local_stack_cell_num);
+        loader_ctx->metadata_type_stack = wasmig_stack_push(loader_ctx->metadata_type_stack, wasm_type_width(local_types[i]));
+        loader_ctx->param_local_stack_cell_num += wasm_type_width(local_types[i]);
+    }
 
 #if WASM_ENABLE_FAST_INTERP != 0
     /* For the first traverse, the initial value of preserved_local_offset has
@@ -7249,7 +7269,7 @@ re_scan:
     }
 #endif
 
-    uint32 fidx = module->import_function_count + cur_func_idx;
+    // uint32 fidx = module->import_function_count + cur_func_idx;
     uint32 offset = 0;
 
     CSPEntry csp[1024];
