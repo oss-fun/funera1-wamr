@@ -5007,6 +5007,12 @@ typedef struct WASMLoaderContext {
     uint32 frame_csp_size;
     uint32 csp_num;
     uint32 max_csp_num;
+    
+    /* metadata for C/R */
+    StackStateMap metadata_stack_map;
+    Stack metadata_address_stack;
+    Stack metadata_type_stack;
+    uint32 param_local_cell_num;
 
 #if WASM_ENABLE_FAST_INTERP != 0
     /* frame offset stack */
@@ -5289,6 +5295,19 @@ fail:
     return NULL;
 }
 
+// helper function for type stack
+static inline uint32 wasm_type_width(uint8 type) {
+    switch (type) {
+        case VALUE_TYPE_I32:
+        case VALUE_TYPE_F32: return 1;
+        case VALUE_TYPE_I64:
+        case VALUE_TYPE_F64: return 2;
+        default:
+            wasmig_error("unknown type");
+            return 4;
+    }
+}
+
 static bool
 wasm_loader_push_frame_ref(WASMLoaderContext *ctx, uint8 type, char *error_buf,
                            uint32 error_buf_size)
@@ -5298,6 +5317,12 @@ wasm_loader_push_frame_ref(WASMLoaderContext *ctx, uint8 type, char *error_buf,
 
     if (!check_stack_push(ctx, error_buf, error_buf_size))
         return false;
+    
+    /* push metadata stack */
+    // TODO: must check if a pushed address is correct
+    ctx->metadata_address_stack = wasmig_stack_push(ctx->metadata_address_stack, ctx->param_local_cell_num + ctx->stack_cell_num);
+    ctx->metadata_type_stack = wasmig_stack_push(ctx->metadata_type_stack, wasm_type_width(type));
+    // ctx->param_local_stack_cell_num += wasm_type_width(type);
 
     *ctx->frame_ref++ = type;
     ctx->stack_cell_num++;
@@ -5355,6 +5380,10 @@ wasm_loader_pop_frame_ref(WASMLoaderContext *ctx, uint8 type, char *error_buf,
 
     if (!check_stack_pop(ctx, type, error_buf, error_buf_size))
         return false;
+    
+    // pop metadata stack
+    ctx->metadata_address_stack = wasmig_stack_pop(ctx->metadata_address_stack, NULL);
+    ctx->metadata_type_stack = wasmig_stack_pop(ctx->metadata_type_stack, NULL);
 
     ctx->frame_ref--;
     ctx->stack_cell_num--;
@@ -7193,10 +7222,31 @@ wasm_loader_prepare_bytecode(WASMModule *module, WASMFunction *func,
     }
 
     // Init metadata
-    // StackStateMap metadata_stack_map = wasmig_stack_state_map_create();
-    // Stack metadata_address_stack = wasmig_stack_create();
-    // Stack metadata_type_stack = wasmig_stack_create();
+    loader_ctx->metadata_stack_map = wasmig_stack_state_map_create();
+    loader_ctx->metadata_address_stack = wasmig_stack_create();
+    loader_ctx->metadata_type_stack = wasmig_stack_create();
     AddressMap metadata_address_map = (!wasmig_address_map_exists() ? wasmig_address_map_create(0) : wasmig_address_map_load());
+    Stack metadata_call_site_type_stack, metadata_call_site_address_stack;
+    
+    //  push local to metadata stack 
+    wasmig_info("[prepare_bytecode] param count %d", param_count);
+    uint32 fidx = module->import_function_count + cur_func_idx;
+    uint32 param_local_cell_num = 0;
+    for (int i = 0; i < param_count; i++) {
+        // wasmig_debug("[prepare_bytecode] func %d, param %d, type: %d", fidx, i, param_types[i]);
+        loader_ctx->metadata_address_stack = wasmig_stack_push(loader_ctx->metadata_address_stack, param_local_cell_num);
+        loader_ctx->metadata_type_stack = wasmig_stack_push(loader_ctx->metadata_type_stack, wasm_type_width(param_types[i]));
+        param_local_cell_num += wasm_type_width(param_types[i]);
+    }
+    wasmig_info("[prepare_bytecode] local count %d", local_count);
+    for (int i = 0; i < local_count; i++) {
+        // wasmig_info("[prepare_bytecode] func %d, local %d, type: %d", fidx, i, local_types[i]);
+        loader_ctx->metadata_address_stack = wasmig_stack_push(loader_ctx->metadata_address_stack, param_local_cell_num);
+        loader_ctx->metadata_type_stack = wasmig_stack_push(loader_ctx->metadata_type_stack, wasm_type_width(local_types[i]));
+        param_local_cell_num += wasm_type_width(local_types[i]);
+    }
+    printf("[prepare_bytecode] func %d, total param+local count %d\n", fidx, param_local_cell_num);
+    loader_ctx->param_local_cell_num = param_local_cell_num;
 
 #if WASM_ENABLE_FAST_INTERP != 0
     /* For the first traverse, the initial value of preserved_local_offset has
@@ -7221,7 +7271,7 @@ re_scan:
     }
 #endif
 
-    uint32 fidx = module->import_function_count + cur_func_idx;
+    // uint32 fidx = module->import_function_count + cur_func_idx;
     uint32 offset = 0;
 
     CSPEntry csp[1024];
@@ -7782,6 +7832,10 @@ re_scan:
 #endif
                     }
                 }
+                
+                // save metadata stack during call next function
+                metadata_call_site_type_stack = loader_ctx->metadata_type_stack;
+                metadata_call_site_address_stack = loader_ctx->metadata_address_stack;
 
 #if WASM_ENABLE_TAIL_CALL != 0
                 if (opcode == WASM_OP_CALL) {
@@ -7884,6 +7938,10 @@ re_scan:
                     }
                 }
 
+                // save metadata stack during call next function
+                metadata_call_site_type_stack = loader_ctx->metadata_type_stack;
+                metadata_call_site_address_stack = loader_ctx->metadata_address_stack;
+
 #if WASM_ENABLE_TAIL_CALL != 0
                 if (opcode == WASM_OP_CALL_INDIRECT) {
 #endif
@@ -7947,6 +8005,8 @@ re_scan:
                 }
 
                 if (available_stack_cell > 0) {
+                    loader_ctx->metadata_address_stack = wasmig_stack_pop(loader_ctx->metadata_address_stack, NULL);
+                    loader_ctx->metadata_type_stack = wasmig_stack_pop(loader_ctx->metadata_type_stack, NULL);
                     if (is_32bit_type(*(loader_ctx->frame_ref - 1))
                         || *(loader_ctx->frame_ref - 1) == VALUE_TYPE_ANY) {
                         loader_ctx->frame_ref--;
@@ -10138,6 +10198,14 @@ re_scan:
         // construct metadatas
         // wasmig_debug("frame_ip: %p, fidx: %u, offset: %u", (void*)p, fidx, offset);
         wasmig_address_map_set_bidirect(metadata_address_map, fidx, offset, p);
+        
+        // Map a metadata stack during call at next generated bytecode offset
+        if (opcode == WASM_OP_CALL || opcode == WASM_OP_CALL_INDIRECT) {
+            wasmig_stack_state_save_pair(loader_ctx->metadata_stack_map, offset+1, 
+                metadata_call_site_address_stack, metadata_call_site_type_stack);
+        }
+        wasmig_stack_state_save_pair(loader_ctx->metadata_stack_map, offset, 
+            loader_ctx->metadata_address_stack, loader_ctx->metadata_type_stack);
 
         // update seen_stack_height
         if (func->is_restore_frame && offset == func->return_pos.offset) {
@@ -10152,6 +10220,7 @@ re_scan:
     
     // save metadata
     wasmig_address_map_save(metadata_address_map);
+    wasmig_stack_state_map_registry_save(fidx, loader_ctx->metadata_stack_map);
     if (func->is_restore_frame) {
         func->frame->csp_size = csp_height;
         wasmig_debug("starting csp_entry_clone...");

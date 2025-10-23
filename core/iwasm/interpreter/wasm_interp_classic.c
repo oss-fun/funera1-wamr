@@ -14,6 +14,7 @@
 #include "../common/wasm_exec_env.h"
 #include "../migration/wasm_dump.h"
 #include "../migration/wasm_restore.h"
+#include <wasmig/stack_tables.h>
 #if WASM_ENABLE_SHARED_MEMORY != 0
 #include "../common/wasm_shared_memory.h"
 #endif
@@ -1239,6 +1240,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
     uint8 local_type, *global_addr;
     uint32 cache_index, type_index, param_cell_num, cell_num;
     uint8 value_type;
+    
 #if !defined(OS_ENABLE_HW_BOUND_CHECK) \
     || WASM_CPU_SUPPORTS_UNALIGNED_ADDR_ACCESS == 0
 #if WASM_CONFIGURABLE_BOUNDS_CHECKS != 0
