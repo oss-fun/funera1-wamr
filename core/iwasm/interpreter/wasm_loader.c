@@ -10203,12 +10203,6 @@ re_scan:
         if (opcode == WASM_OP_CALL || opcode == WASM_OP_CALL_INDIRECT) {
             wasmig_stack_state_save_pair(loader_ctx->metadata_stack_map, offset+1, 
                 metadata_call_site_address_stack, metadata_call_site_type_stack);
-            if (fidx == 13) {
-                printf("call site saved at (%u, %u)\n", fidx, offset+1);
-                wasmig_stack_print(metadata_call_site_address_stack);
-                wasmig_stack_print(metadata_call_site_type_stack);
-            }
-
         }
         wasmig_stack_state_save_pair(loader_ctx->metadata_stack_map, offset, 
             loader_ctx->metadata_address_stack, loader_ctx->metadata_type_stack);
