@@ -42,7 +42,7 @@ wasm_alloc_frame(WASMExecEnv *exec_env, uint32 size, WASMInterpFrame *prev_frame
     return frame;
 }
 
-
+#if WASM_ENABLE_FAST_INTERP == 0
 static void
 _restore_program_counter(WASMInterpFrame *frame, CallStackEntry *entry)
 {
@@ -387,3 +387,4 @@ int wasm_restore(WASMModuleInstance **module,
 
     return 0;
 }
+#endif // end of WASM_ENABLE_FAST_INTERP != 0  

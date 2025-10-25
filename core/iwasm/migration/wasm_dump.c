@@ -24,6 +24,7 @@
 
 /* wasm_dump */
 
+#if WASM_ENABLE_FAST_INTERP == 0
 bool load_metadata_stacks(uint32 fidx, uint32 offset, Stack* addr_stack, Stack* type_stack) {
     StackStateMap m = wasmig_stack_state_map_registry_load(fidx);
     if (!wasmig_stack_state_load_pair(m, offset, addr_stack, type_stack)) {
@@ -337,3 +338,4 @@ int wasm_dump(WASMExecEnv *exec_env,
     LOG_VERBOSE("Success to dump img for wamr\n");
     return 0;
 }
+#endif
