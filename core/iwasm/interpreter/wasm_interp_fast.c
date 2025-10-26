@@ -1114,9 +1114,34 @@ wasm_interp_dump_op_count()
 #else
 #define HANDLE_OP(opcode) HANDLE_##opcode:
 #endif
+
+#define DO_CHECKPOINT()                                                     \
+    do {                                                                    \
+        SYNC_ALL_TO_FRAME();                                                \
+        uint8 *dummy_ip;                                                    \
+        uint32 *dummy_sp;                                                   \
+        dummy_ip = frame_ip;                                                \
+        dummy_sp = frame_lp;                                                \
+        int rc = wasm_dump(exec_env, module, memory,                        \
+            globals, global_data, cur_func,                                 \
+            frame, dummy_ip);                                               \
+        if (rc < 0) {                                                       \
+            perror("failed to dump\n");                                     \
+            exit(1);                                                        \
+        }                                                                   \
+        LOG_DEBUG("dispatch_count: %d\n", dispatch_count);                  \
+        exit(0);                                                            \
+    } while(0)                                                              
+
+#define CHECK_DUMP()                                                        \
+    if (sig_flag) {                                                         \
+        DO_CHECKPOINT();                                                    \
+    }
+
 #if WASM_CPU_SUPPORTS_UNALIGNED_ADDR_ACCESS != 0
 #define FETCH_OPCODE_AND_DISPATCH()                    \
     do {                                               \
+        CHECK_DUMP();                                  \ 
         const void *p_label_addr = *(void **)frame_ip; \
         frame_ip += sizeof(void *);                    \
         goto *p_label_addr;                            \
@@ -1168,6 +1193,13 @@ get_global_addr(uint8 *global_data, WASMGlobalInstance *global)
                      + global->import_global_inst->data_offset
                : global_data + global->data_offset;
 #endif
+}
+
+static bool sig_flag = false;
+void
+wasm_interp_sigint(int signum)
+{
+    sig_flag = true;
 }
 
 static void
@@ -1230,6 +1262,10 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
         return;
     }
 #endif
+
+    // register signal handler for C/R
+    printf("register signal handler for C/R at fast interpreter\n");
+    signal(SIGINT, &wasm_interp_sigint);
 
 #if WASM_ENABLE_LABELS_AS_VALUES == 0
     while (frame_ip < frame_ip_end) {
@@ -3716,7 +3752,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
         HANDLE_OP(WASM_OP_BLOCK)
         HANDLE_OP(WASM_OP_LOOP)
         HANDLE_OP(WASM_OP_END)
-        HANDLE_OP(WASM_OP_NOP)
+        // HANDLE_OP(WASM_OP_NOP)
         HANDLE_OP(EXT_OP_BLOCK)
         HANDLE_OP(EXT_OP_LOOP)
         HANDLE_OP(EXT_OP_IF)
@@ -3725,6 +3761,14 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
             wasm_set_exception(module, "unsupported opcode");
             goto got_exception;
         }
+        
+        HANDLE_OP(WASM_OP_NOP)
+        {
+            char* env = getenv("NOP_CKPT"); 
+            if (env && (strcmp(env, "1") == 0)) sig_flag = 1;
+            HANDLE_OP_END(); 
+        }
+
 #endif
 
 #if WASM_ENABLE_LABELS_AS_VALUES == 0

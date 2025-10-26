@@ -7300,7 +7300,7 @@ re_scan:
 
             case WASM_OP_NOP:
 #if WASM_ENABLE_FAST_INTERP != 0
-                skip_label();
+                // skip_label();
 #endif
                 break;
 

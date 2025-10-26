@@ -21,8 +21,6 @@ int64_t get_time(struct timespec ts1, struct timespec ts2) {
   return sec * 1e9 + nsec;
 }
 
-#if WASM_ENABLE_FAST_INTERP == 0
-
 /* common_functions */
 int dump_value(void *ptr, size_t size, size_t nmemb, FILE *stream) {
     if (stream == NULL) {
@@ -205,6 +203,7 @@ debug_local(WASMInterpFrame *frame)
 }
 
 
+#if WASM_ENABLE_FAST_INTERP == 0
 static void
 debug_label_stack(WASMInterpFrame *frame)
 {
