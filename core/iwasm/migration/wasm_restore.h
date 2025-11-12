@@ -40,6 +40,5 @@ int wasm_restore(WASMModuleInstance **module,
             uint8 **frame_ip_end,
             uint8 **else_addr,
             uint8 **end_addr,
-            uint8 **maddr,
-            bool *done_flag);
+            uint8 **maddr);
 #endif // _WASM_RESTORE_H

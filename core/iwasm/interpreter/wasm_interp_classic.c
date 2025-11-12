@@ -26,6 +26,8 @@
 #include "../fast-jit/jit_compiler.h"
 #endif
 
+#define WASMIG_ENABLE_CHECKPOINTS 1
+
 typedef int32 CellType_I32;
 typedef int64 CellType_I64;
 typedef float32 CellType_F32;
@@ -1115,10 +1117,15 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
         exit(0);                                                            \
     } while(0)                                                              
 
+#if WASMIG_ENABLE_CHECKPOINTS != 0
 #define CHECK_DUMP()                                                        \
-    if (sig_flag) {                                                         \
-        DO_CHECKPOINT();                                                    \
+    if (__glibc_unlikely(sig_flag)) {                                                         \
+        DO_CHECKPOINT(); \
     }
+#else 
+#define CHECK_DUMP()                                                        
+#endif
+
 
 // #define FETCH_OPCODE_AND_DISPATCH() goto *handle_table[*frame_ip++]
 #define FETCH_OPCODE_AND_DISPATCH()                                     \
@@ -1191,9 +1198,8 @@ static void clear_refs() {
     close(fd);
 }
 
-static bool sig_flag = false;
-static void (*native_handler)(void) = NULL;
-bool done_flag = false;
+// static bool sig_flag = false;
+volatile sig_atomic_t sig_flag = false;
 void
 wasm_interp_sigint(int signum)
 {
@@ -1312,7 +1318,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
         rc = wasm_restore(&module, &exec_env, &cur_func, &prev_frame,
                         &memory, &globals, &global_data, &global_addr,
                         &frame, &dummy_ip, &dummy_lp, &dummy_sp, &frame_csp,
-                        &frame_ip_end, &else_addr, &end_addr, &maddr, &done_flag);
+                        &frame_ip_end, &else_addr, &end_addr, &maddr);
         if (rc < 0) {
             // error
             perror("failed to restore\n");

@@ -244,8 +244,6 @@ _restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, WASM
 WASMInterpFrame*
 wasm_restore_stack(WASMExecEnv **_exec_env)
 {
-    wasmig_info("wasm_restore_stack\n");
-    
     WASMExecEnv *exec_env = *_exec_env;
     WASMModuleInstance *module_inst = (WASMModuleInstance *)exec_env->module_inst;
     
@@ -264,7 +262,6 @@ wasm_restore_stack(WASMExecEnv **_exec_env)
     
     _exec_env = &exec_env;
     
-    wasmig_info("Finish to restore stack\n");
     return wasm_exec_env_get_cur_frame(exec_env);
 }
 
@@ -360,8 +357,7 @@ int wasm_restore(WASMModuleInstance **module,
             uint8 **frame_ip_end,
             uint8 **else_addr,
             uint8 **end_addr,
-            uint8 **maddr,
-            bool *done_flag)
+            uint8 **maddr)
 {
     struct timespec ts1, ts2;
     // restore memory
