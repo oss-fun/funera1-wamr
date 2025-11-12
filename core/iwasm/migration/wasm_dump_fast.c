@@ -176,6 +176,7 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
     entry->pc = call_pos;
     entry->locals = locals;
     entry->value_stack = value_stack;
+    entry->label_stack = (LabelStack){0, NULL, NULL, NULL, NULL}; // TODO: implement label stack
 }
 
 

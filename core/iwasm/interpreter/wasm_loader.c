@@ -6014,6 +6014,11 @@ wasm_loader_push_frame_offset(WASMLoaderContext *ctx, uint8 type,
             return false;
     }
 
+    /* push metadata stack */
+    // TODO: must check if a pushed address is correct
+    ctx->metadata_address_stack = wasmig_stack_push(ctx->metadata_address_stack, ctx->dynamic_offset);
+    ctx->metadata_type_stack = wasmig_stack_push(ctx->metadata_type_stack, wasm_type_width(type));
+
     if (disable_emit)
         *(ctx->frame_offset)++ = operand_offset;
     else {
@@ -6075,6 +6080,10 @@ wasm_loader_pop_frame_offset(WASMLoaderContext *ctx, uint8 type,
 
     if (type == VALUE_TYPE_VOID)
         return true;
+
+    // pop metadata stack
+    ctx->metadata_address_stack = wasmig_stack_pop(ctx->metadata_address_stack, NULL);
+    ctx->metadata_type_stack = wasmig_stack_pop(ctx->metadata_type_stack, NULL);
 
     if (is_32bit_type(type)) {
         /* Check the offset stack bottom to ensure the frame offset
@@ -7237,7 +7246,7 @@ wasm_loader_prepare_bytecode(WASMModule *module, WASMFunction *func,
     Stack metadata_call_site_type_stack, metadata_call_site_address_stack;
     
     //  push local to metadata stack 
-    wasmig_info("[prepare_bytecode] param count %d", param_count);
+    // wasmig_info("[prepare_bytecode] param count %d", param_count);
     uint32 fidx = module->import_function_count + cur_func_idx;
     uint32 param_local_cell_num = 0;
     for (int i = 0; i < param_count; i++) {
@@ -7246,14 +7255,14 @@ wasm_loader_prepare_bytecode(WASMModule *module, WASMFunction *func,
         loader_ctx->metadata_type_stack = wasmig_stack_push(loader_ctx->metadata_type_stack, wasm_type_width(param_types[i]));
         param_local_cell_num += wasm_type_width(param_types[i]);
     }
-    wasmig_info("[prepare_bytecode] local count %d", local_count);
+    // wasmig_info("[prepare_bytecode] local count %d", local_count);
     for (int i = 0; i < local_count; i++) {
         // wasmig_info("[prepare_bytecode] func %d, local %d, type: %d", fidx, i, local_types[i]);
         loader_ctx->metadata_address_stack = wasmig_stack_push(loader_ctx->metadata_address_stack, param_local_cell_num);
         loader_ctx->metadata_type_stack = wasmig_stack_push(loader_ctx->metadata_type_stack, wasm_type_width(local_types[i]));
         param_local_cell_num += wasm_type_width(local_types[i]);
     }
-    printf("[prepare_bytecode] func %d, total param+local count %d\n", fidx, param_local_cell_num);
+    // printf("[prepare_bytecode] func %d, total param+local count %d\n", fidx, param_local_cell_num);
     loader_ctx->param_local_cell_num = param_local_cell_num;
 
 #if WASM_ENABLE_FAST_INTERP != 0
