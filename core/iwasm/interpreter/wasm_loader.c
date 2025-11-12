@@ -5321,9 +5321,11 @@ wasm_loader_push_frame_ref(WASMLoaderContext *ctx, uint8 type, char *error_buf,
         return false;
     
     /* push metadata stack */
+#if WASM_ENABLE_FAST_INTERP == 0
     // TODO: must check if a pushed address is correct
     ctx->metadata_address_stack = wasmig_stack_push(ctx->metadata_address_stack, ctx->param_local_cell_num + ctx->stack_cell_num);
     ctx->metadata_type_stack = wasmig_stack_push(ctx->metadata_type_stack, wasm_type_width(type));
+#endif
     // ctx->param_local_stack_cell_num += wasm_type_width(type);
 
     *ctx->frame_ref++ = type;
@@ -5383,9 +5385,11 @@ wasm_loader_pop_frame_ref(WASMLoaderContext *ctx, uint8 type, char *error_buf,
     if (!check_stack_pop(ctx, type, error_buf, error_buf_size))
         return false;
     
+#if WASM_ENABLE_FAST_INTERP == 0
     // pop metadata stack
     ctx->metadata_address_stack = wasmig_stack_pop(ctx->metadata_address_stack, NULL);
     ctx->metadata_type_stack = wasmig_stack_pop(ctx->metadata_type_stack, NULL);
+#endif
 
     ctx->frame_ref--;
     ctx->stack_cell_num--;
@@ -5488,6 +5492,7 @@ fail:
     } while (0)
 #define skip_label()                                            \
     do {                                                        \
+        loader_ctx->is_emitted = false;                         \
         wasm_loader_emit_backspace(loader_ctx, sizeof(void *)); \
         LOG_OP("\ndelete last op\n");                           \
     } while (0)
@@ -6014,10 +6019,12 @@ wasm_loader_push_frame_offset(WASMLoaderContext *ctx, uint8 type,
             return false;
     }
 
+#if WASM_ENABLE_FAST_INTERP != 0
     /* push metadata stack */
     // TODO: must check if a pushed address is correct
     ctx->metadata_address_stack = wasmig_stack_push(ctx->metadata_address_stack, ctx->dynamic_offset);
     ctx->metadata_type_stack = wasmig_stack_push(ctx->metadata_type_stack, wasm_type_width(type));
+#endif
 
     if (disable_emit)
         *(ctx->frame_offset)++ = operand_offset;
@@ -6081,9 +6088,11 @@ wasm_loader_pop_frame_offset(WASMLoaderContext *ctx, uint8 type,
     if (type == VALUE_TYPE_VOID)
         return true;
 
+#if WASM_ENABLE_FAST_INTERP != 0
     // pop metadata stack
     ctx->metadata_address_stack = wasmig_stack_pop(ctx->metadata_address_stack, NULL);
     ctx->metadata_type_stack = wasmig_stack_pop(ctx->metadata_type_stack, NULL);
+#endif
 
     if (is_32bit_type(type)) {
         /* Check the offset stack bottom to ensure the frame offset
@@ -7302,6 +7311,7 @@ re_scan:
 
     while (p < p_end) {
         offset = p - func->code;
+        loader_ctx->is_emitted = false;
 
         opcode = *p++;
 #if WASM_ENABLE_FAST_INTERP != 0
@@ -8031,6 +8041,9 @@ re_scan:
 #if WASM_ENABLE_FAST_INTERP != 0
                         skip_label();
                         loader_ctx->frame_offset--;
+                        // pop metadata stack
+                        loader_ctx->metadata_address_stack = wasmig_stack_pop(loader_ctx->metadata_address_stack, NULL);
+                        loader_ctx->metadata_type_stack = wasmig_stack_pop(loader_ctx->metadata_type_stack, NULL);
                         if ((*(loader_ctx->frame_offset)
                              > loader_ctx->start_dynamic_offset)
                             && (*(loader_ctx->frame_offset)
@@ -8047,6 +8060,9 @@ re_scan:
 #if WASM_ENABLE_FAST_INTERP != 0
                         skip_label();
                         loader_ctx->frame_offset -= 2;
+                        // pop metadata stack
+                        loader_ctx->metadata_address_stack = wasmig_stack_pop(loader_ctx->metadata_address_stack, NULL);
+                        loader_ctx->metadata_type_stack = wasmig_stack_pop(loader_ctx->metadata_type_stack, NULL);
                         if ((*(loader_ctx->frame_offset)
                              > loader_ctx->start_dynamic_offset)
                             && (*(loader_ctx->frame_offset)
@@ -8462,6 +8478,9 @@ re_scan:
                                       local_offset);
                         loader_ctx->frame_offset--;
                         loader_ctx->dynamic_offset--;
+                        // pop metadata stack
+                        loader_ctx->metadata_address_stack = wasmig_stack_pop(loader_ctx->metadata_address_stack, NULL);
+                        loader_ctx->metadata_type_stack = wasmig_stack_pop(loader_ctx->metadata_type_stack, NULL);
                     }
                     else if ((!preserve_local) && (LAST_OP_OUTPUT_I64())) {
                         if (loader_ctx->p_code_compiled)
@@ -8469,6 +8488,9 @@ re_scan:
                                       local_offset);
                         loader_ctx->frame_offset -= 2;
                         loader_ctx->dynamic_offset -= 2;
+                        // pop metadata stack
+                        loader_ctx->metadata_address_stack = wasmig_stack_pop(loader_ctx->metadata_address_stack, NULL);
+                        loader_ctx->metadata_type_stack = wasmig_stack_pop(loader_ctx->metadata_type_stack, NULL);
                     }
                     else {
                         if (is_32bit_type(local_type)) {
@@ -10240,6 +10262,11 @@ re_scan:
 
 #if WASM_ENABLE_FAST_INTERP != 0
         last_op = opcode;
+        // debug
+        if (fidx == 21) {
+            printf("(pc, offset) = (%d, %d)\n", fidx, offset);
+            wasmig_stack_print(loader_ctx->metadata_type_stack);
+        }
 #endif
     }
     
