@@ -8447,8 +8447,8 @@ re_scan:
 
 #if WASM_ENABLE_FAST_INTERP != 0
                 /* Get Local is optimized out */
-                printf("local.get; p_code_compiled=%s, ctx->dynamic_offset=%d, (fidx, offset) = (%u, %u)\n", 
-                    (loader_ctx->p_code_compiled ? "true" : "false"), loader_ctx->dynamic_offset, fidx, offset);
+                // printf("local.get; p_code_compiled=%s, ctx->dynamic_offset=%d, (fidx, offset) = (%u, %u)\n", 
+                //     (loader_ctx->p_code_compiled ? "true" : "false"), loader_ctx->dynamic_offset, fidx, offset);
                 skip_label();
                 disable_emit = true;
                 operand_offset = local_offset;
@@ -10284,11 +10284,11 @@ re_scan:
 #if WASM_ENABLE_FAST_INTERP != 0
         last_op = opcode;
         // debug
-        if (fidx == 13 && !loader_ctx->is_rescaned) {
-            int size = wasmig_stack_size(loader_ctx->metadata_type_stack);
-            printf("(pc, offset, stack size) = (%d, %d, %d)\n", fidx, offset, size);
-            wasmig_stack_print(loader_ctx->metadata_type_stack);
-        }
+        // if (fidx == 13 && !loader_ctx->is_rescaned) {
+        //     int size = wasmig_stack_size(loader_ctx->metadata_type_stack);
+        //     printf("(pc, offset, stack size) = (%d, %d, %d)\n", fidx, offset, size);
+        //     wasmig_stack_print(loader_ctx->metadata_type_stack);
+        // }
 #endif
     }
     

@@ -111,7 +111,6 @@ static bool
 _setup_value_stacks(struct WASMInterpFrame *frame, CodePos call_pos, bool is_stack_top,
                    TypedArray *out_locals, TypedArray *out_value_stack)
 {
-    // wasmig_info("fidx: %d, offset: %d\n", call_pos.fidx, call_pos.offset);
     if (!is_stack_top) 
         call_pos.offset += 1;
 
@@ -127,8 +126,8 @@ _setup_value_stacks(struct WASMInterpFrame *frame, CodePos call_pos, bool is_sta
     }
     uint32 local_count = func->param_count + func->local_count;
     uint32 local_size = func->param_cell_num + func->local_cell_num;
-    wasmig_info("stack_count=%d, stack_size=%d\n", stack_count, stack_size);
-    wasmig_info("local_count=%d, local_size=%d\n", local_count, local_size);
+    wasmig_debug("stack_count=%d, stack_size=%d\n", stack_count, stack_size);
+    wasmig_debug("local_count=%d, local_size=%d\n", local_count, local_size);
     
     // get states
     // Array8 locals_types = get_local_types(call_pos.fidx);
@@ -153,8 +152,8 @@ _setup_value_stacks(struct WASMInterpFrame *frame, CodePos call_pos, bool is_sta
     out_value_stack->values = (Array32){stack_size - local_size, value_buf + local_size};
     
     // print log
-    wasmig_info("locals: {count=%d, size=%d}\n", local_count, local_size);
-    wasmig_info("value_stack: {count=%d, size=%d}\n", stack_count - local_count, stack_size - local_size);
+    wasmig_debug("locals: {count=%d, size=%d}\n", local_count, local_size);
+    wasmig_debug("value_stack: {count=%d, size=%d}\n", stack_count - local_count, stack_size - local_size);
 
     return true;
 }
@@ -206,7 +205,7 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
     CallStack cs = {.size = call_stack_size, .entries = entries};
     print_call_stack(&cs);
     wasmig_checkpoint_stack_v4(call_stack_size, entries);
-    wasmig_info("Success to dump frame stack\n");
+    wasmig_debug("Success to dump frame stack\n");
 
     return 0;
 }
