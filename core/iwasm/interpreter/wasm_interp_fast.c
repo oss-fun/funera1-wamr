@@ -1267,6 +1267,67 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
     printf("register signal handler for C/R at fast interpreter\n");
     signal(SIGINT, &wasm_interp_sigint);
 
+    // リストアの初期化時間の計測(終了)
+    struct timespec ts1;
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
+    fprintf(stderr, "boot_end, %lu\n", (uint64_t)(ts1.tv_sec*1e9) + ts1.tv_nsec);
+
+    if (get_restore_flag()) {
+        // bool done_flag;
+        int rc;
+        struct timespec ts1, ts2;
+
+        // NOTE: Can the wasm_restore_stack() include in wasm_restore()?
+        clock_gettime(CLOCK_MONOTONIC, &ts1);
+        frame = wasm_restore_stack(&exec_env);
+        clock_gettime(CLOCK_MONOTONIC, &ts2);
+        fprintf(stderr, "stack, %lu\n", get_time(ts1, ts2));
+        if (frame == NULL) {
+            perror("Error:wasm_interp_func_bytecode:frame is NULL\n");
+            return;
+        }
+        // debug_wasm_interp_frame(frame, module->e->functions);
+
+        cur_func = frame->function;
+        prev_frame = frame->prev_frame;
+        if (cur_func == NULL) {
+            perror("Error:wasm_interp_func_bytecode:cur_func is null\n");
+            return;
+        }
+        if (prev_frame == NULL) {
+            perror("Error:wasm_interp_func_bytecode:prev_frame is null\n");
+            return;
+        }
+
+        uint8 *dummy_ip, *dummy_lp, *dummy_sp;
+        rc = wasm_restore(&module, &exec_env, &cur_func, &prev_frame,
+                        &memory, &globals, &global_data, &global_addr,
+                        &frame, &dummy_ip, &dummy_lp, &dummy_sp, NULL,
+                        &frame_ip_end, NULL, NULL, &maddr, NULL);
+        if (rc < 0) {
+            // error
+            perror("failed to restore\n");
+            return;
+        }
+        frame_ip = dummy_ip;
+        frame_lp = dummy_lp;
+        frame_lp = dummy_sp;
+        frame->ip = frame_ip;
+        linear_mem_size = memory ? memory->memory_data_size : 0;
+
+        frame_lp = frame->lp;
+        UPDATE_ALL_FROM_FRAME();
+
+        // checkpoint after restoring the Wasm state for debugging
+        // char* is_checkpoint_after_restore = getenv("CHECKPOINT_AFTER_RESTORE"); 
+        // if (is_checkpoint_after_restore && (strcmp(is_checkpoint_after_restore, "1") == 0)) {
+        //     sig_flag = 1;
+        //     goto migration_async;
+        // }
+
+        FETCH_OPCODE_AND_DISPATCH();
+    }
+
 #if WASM_ENABLE_LABELS_AS_VALUES == 0
     while (frame_ip < frame_ip_end) {
         opcode = *frame_ip++;
