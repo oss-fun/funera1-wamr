@@ -10275,7 +10275,13 @@ re_scan:
 
     // save metadata
     wasmig_address_map_save(metadata_address_map);
-    wasmig_stack_state_map_registry_save(fidx, loader_ctx->metadata_stack_map);
+    // if not saved yet, save stack map
+    if (!wasmig_stack_state_map_registry_exists(fidx)) {
+        wasmig_stack_state_map_registry_save(fidx, loader_ctx->metadata_stack_map);
+    } else {
+        // TODO: when already exists, not create a new one
+        wasmig_stack_state_map_destroy(loader_ctx->metadata_stack_map);
+    }
     if (func->is_restore_frame) {
         func->frame->csp_size = csp_height;
         wasmig_debug("starting csp_entry_clone...");
