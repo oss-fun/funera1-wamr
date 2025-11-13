@@ -8039,10 +8039,10 @@ re_scan:
                 }
 
                 if (available_stack_cell > 0) {
-                    if (!loader_ctx->is_rescaned) {
-                        loader_ctx->metadata_address_stack = wasmig_stack_pop(loader_ctx->metadata_address_stack, NULL);
-                        loader_ctx->metadata_type_stack = wasmig_stack_pop(loader_ctx->metadata_type_stack, NULL);
-                    }
+                    // if (!loader_ctx->is_rescaned) {
+                    //     loader_ctx->metadata_address_stack = wasmig_stack_pop(loader_ctx->metadata_address_stack, NULL);
+                    //     loader_ctx->metadata_type_stack = wasmig_stack_pop(loader_ctx->metadata_type_stack, NULL);
+                    // }
                     if (is_32bit_type(*(loader_ctx->frame_ref - 1))
                         || *(loader_ctx->frame_ref - 1) == VALUE_TYPE_ANY) {
                         loader_ctx->frame_ref--;
@@ -10284,8 +10284,9 @@ re_scan:
 #if WASM_ENABLE_FAST_INTERP != 0
         last_op = opcode;
         // debug
-        if (fidx == 21 && !loader_ctx->is_rescaned) {
-            printf("(pc, offset) = (%d, %d)\n", fidx, offset);
+        if (fidx == 13 && !loader_ctx->is_rescaned) {
+            int size = wasmig_stack_size(loader_ctx->metadata_type_stack);
+            printf("(pc, offset, stack size) = (%d, %d, %d)\n", fidx, offset, size);
             wasmig_stack_print(loader_ctx->metadata_type_stack);
         }
 #endif
