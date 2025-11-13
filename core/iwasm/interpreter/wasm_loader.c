@@ -6020,15 +6020,6 @@ wasm_loader_push_frame_offset(WASMLoaderContext *ctx, uint8 type,
             return false;
     }
 
-#if WASM_ENABLE_FAST_INTERP != 0
-    /* push metadata stack */
-    // TODO: must check if a pushed address is correct
-    if (!ctx->is_rescaned) {
-        ctx->metadata_address_stack = wasmig_stack_push(ctx->metadata_address_stack, ctx->dynamic_offset);
-        ctx->metadata_type_stack = wasmig_stack_push(ctx->metadata_type_stack, wasm_type_width(type));
-    }
-#endif
-
     if (disable_emit)
         *(ctx->frame_offset)++ = operand_offset;
     else {
@@ -6042,6 +6033,16 @@ wasm_loader_push_frame_offset(WASMLoaderContext *ctx, uint8 type,
             }
         }
     }
+
+#if WASM_ENABLE_FAST_INTERP != 0
+    /* push metadata stack */
+    // TODO: must check if a pushed address is correct
+    if (!ctx->is_rescaned) {
+        ctx->metadata_address_stack = wasmig_stack_push(ctx->metadata_address_stack, *(ctx->frame_offset-1));
+        ctx->metadata_type_stack = wasmig_stack_push(ctx->metadata_type_stack, wasm_type_width(type));
+    }
+#endif
+
 
     if (is_32bit_type(type))
         return true;
@@ -7291,9 +7292,6 @@ wasm_loader_prepare_bytecode(WASMModule *module, WASMFunction *func,
     loader_ctx->preserved_local_offset = INT16_MAX;
 
 re_scan:
-    if (fidx == 21) {
-        printf("re_scan, code_compiled_size=%d\n", loader_ctx->code_compiled_size);
-    }
     if (loader_ctx->code_compiled_size > 0) {
         loader_ctx->is_rescaned = true;
         if (!wasm_loader_ctx_reinit(loader_ctx)) {
@@ -8449,6 +8447,8 @@ re_scan:
 
 #if WASM_ENABLE_FAST_INTERP != 0
                 /* Get Local is optimized out */
+                printf("local.get; p_code_compiled=%s, ctx->dynamic_offset=%d, (fidx, offset) = (%u, %u)\n", 
+                    (loader_ctx->p_code_compiled ? "true" : "false"), loader_ctx->dynamic_offset, fidx, offset);
                 skip_label();
                 disable_emit = true;
                 operand_offset = local_offset;
