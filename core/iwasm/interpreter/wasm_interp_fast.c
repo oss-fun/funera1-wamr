@@ -1279,7 +1279,8 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
 
         // NOTE: Can the wasm_restore_stack() include in wasm_restore()?
         clock_gettime(CLOCK_MONOTONIC, &ts1);
-        frame = wasm_restore_stack(&exec_env);
+        wasm_restore_stack(&exec_env);
+        frame = wasm_exec_env_get_cur_frame(exec_env);
         clock_gettime(CLOCK_MONOTONIC, &ts2);
         fprintf(stderr, "stack, %lu\n", get_time(ts1, ts2));
         if (frame == NULL) {
@@ -1289,11 +1290,12 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
         // debug_wasm_interp_frame(frame, module->e->functions);
 
         cur_func = frame->function;
-        prev_frame = frame->prev_frame;
-        if (cur_func == NULL) {
+        if (frame->function == NULL) {
             perror("Error:wasm_interp_func_bytecode:cur_func is null\n");
             return;
         }
+
+        prev_frame = frame->prev_frame;
         if (prev_frame == NULL) {
             perror("Error:wasm_interp_func_bytecode:prev_frame is null\n");
             return;
@@ -1309,21 +1311,17 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
             perror("failed to restore\n");
             return;
         }
-        frame_ip = dummy_ip;
-        frame_lp = dummy_lp;
-        frame_lp = dummy_sp;
-        frame->ip = frame_ip;
+        frame_ip = frame->ip;
+        frame_lp = frame->lp;
         linear_mem_size = memory ? memory->memory_data_size : 0;
 
-        frame_lp = frame->lp;
         UPDATE_ALL_FROM_FRAME();
 
         // checkpoint after restoring the Wasm state for debugging
-        // char* is_checkpoint_after_restore = getenv("CHECKPOINT_AFTER_RESTORE"); 
-        // if (is_checkpoint_after_restore && (strcmp(is_checkpoint_after_restore, "1") == 0)) {
-        //     sig_flag = 1;
-        //     goto migration_async;
-        // }
+        char* is_checkpoint_after_restore = getenv("CHECKPOINT_AFTER_RESTORE"); 
+        if (is_checkpoint_after_restore && (strcmp(is_checkpoint_after_restore, "1") == 0)) {
+            sig_flag = 1;
+        }
 
         FETCH_OPCODE_AND_DISPATCH();
     }

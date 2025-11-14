@@ -44,10 +44,8 @@ _restore_program_counter(WASMInterpFrame *frame, CallStackEntry *entry)
 // static void
 // _initialize_frame_boundaries(WASMInterpFrame *frame, WASMFunctionInstance *func)
 // {
-//     frame->sp_bottom = frame->lp + func->param_cell_num + func->local_cell_num;
-//     frame->sp_boundary = frame->sp_bottom + func->u.func->max_stack_cell_num;
-//     frame->csp_bottom = frame->sp_boundary;
-//     frame->csp_boundary = frame->csp_bottom + func->u.func->max_block_num;
+//     frame->lp =
+//         frame->operand + func->const_cell_num;
 // }
 
 static void
@@ -55,7 +53,7 @@ _restore_value_stacks(WASMInterpFrame *frame, WASMFunctionInstance *func, CallSt
 {
     // 値スタック（SP）のサイズ復元
     uint32 stack_size = entry->value_stack.values.size;
-    // frame->sp = frame->sp_bottom + stack_size;
+    frame->lp = frame->operand + func->const_cell_num;
     // wasmig_debug("restore sp");
 
     // restore locals
@@ -65,7 +63,7 @@ _restore_value_stacks(WASMInterpFrame *frame, WASMFunctionInstance *func, CallSt
     memcpy(frame->lp, entry->locals.values.contents, entry->locals.values.size * sizeof(uint32_t));
 
     // restore value stack
-    memcpy(frame->lp, entry->value_stack.values.contents, entry->value_stack.values.size * sizeof(uint32_t));
+    memcpy(frame->lp+local_cell_num, entry->value_stack.values.contents, entry->value_stack.values.size * sizeof(uint32_t));
     wasmig_debug("restore value stack");
 }
 
@@ -90,21 +88,25 @@ static WASMInterpFrame *
 _create_frame(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, 
               CodePos pc, WASMInterpFrame *prev_frame)
 {
-    WASMFunctionInstance *function = module_inst->e->functions + pc.fidx;
+    WASMFunctionInstance *cur_func = module_inst->e->functions + pc.fidx;
     
     // Calculate frame size
-    uint32 all_cell_num = (uint32)function->param_cell_num
-                        + (uint32)function->local_cell_num
-                        + (uint32)function->u.func->max_stack_cell_num
-                        + ((uint32)function->u.func->max_block_num)
-                                * sizeof(WASMBranchBlock) / 4
-                        + (uint32)function->u.func->max_stack_cell_num;
+    WASMFunction *cur_wasm_func = cur_func->u.func;
+    uint32 all_cell_num = cur_func->param_cell_num + cur_func->local_cell_num
+                           + cur_func->const_cell_num
+                           + cur_wasm_func->max_stack_cell_num;
     uint32 frame_size = wasm_interp_interp_frame_size(all_cell_num);
     
     // Allocate this frame
-    WASMInterpFrame *frame = wasm_alloc_frame(exec_env, frame_size, prev_frame);
-    frame->function = function;
+    WASMInterpFrame *frame;
+    if (!(frame = wasm_alloc_frame(exec_env, frame_size, prev_frame))) {
+        frame = prev_frame;
+        wasmig_error("Failed to allocate frame");
+        exit(1);
+    }
+    frame->function = cur_func;
     
+    printf("Allocated frame for function index: %d, frame address: %p\n", pc.fidx, frame);
     return frame;
 }
 
@@ -116,7 +118,6 @@ _restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, WASM
     // Iterate call stack entries
     for (int i = 0; i < cs->size; i++) {
         WASMCSPFrame *csp_frame = &cs->frames[i];
-        // CallStackEntry *entry = &cs->frames[i].entry;
         
         // allocate frame
         frame = _create_frame(exec_env, module_inst, csp_frame->entry.pc, prev_frame);
@@ -132,7 +133,7 @@ _restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, WASM
     wasmig_debug("restore frame\n");
 }
 
-WASMInterpFrame*
+void
 wasm_restore_stack(WASMExecEnv **_exec_env)
 {
     wasmig_info("wasm_restore_stack\n");
@@ -156,7 +157,6 @@ wasm_restore_stack(WASMExecEnv **_exec_env)
     _exec_env = &exec_env;
     
     wasmig_info("Finish to restore stack\n");
-    return wasm_exec_env_get_cur_frame(exec_env);
 }
 
 void restore_dirty_memory(WASMMemoryInstance **memory, FILE* memory_fp) {
