@@ -22,7 +22,6 @@ bool get_restore_flag()
     return restore_flag;
 }
 
-
 static inline WASMInterpFrame *
 wasm_alloc_frame(WASMExecEnv *exec_env, uint32 size, WASMInterpFrame *prev_frame)
 {

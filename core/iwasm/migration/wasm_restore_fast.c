@@ -13,6 +13,25 @@
 #include <wasmig/registry.h>
 
 #if WASM_ENABLE_FAST_INTERP != 0
+static inline WASMInterpFrame *
+wasm_alloc_frame(WASMExecEnv *exec_env, uint32 size, WASMInterpFrame *prev_frame)
+{
+    WASMInterpFrame *frame = wasm_exec_env_alloc_wasm_frame(exec_env, size);
+
+    if (frame) {
+        frame->prev_frame = prev_frame;
+#if WASM_ENABLE_PERF_PROFILING != 0
+        frame->time_started = os_time_get_boot_microsecond();
+#endif
+    }
+    else {
+        wasm_set_exception((WASMModuleInstance *)exec_env->module_inst,
+                           "wasm operand stack overflow");
+    }
+
+    return frame;
+}
+
 static void
 _restore_program_counter(WASMInterpFrame *frame, CallStackEntry *entry)
 {
@@ -22,22 +41,22 @@ _restore_program_counter(WASMInterpFrame *frame, CallStackEntry *entry)
 }
 
 // Initialize stack and call stack boundaries
-static void
-_initialize_frame_boundaries(WASMInterpFrame *frame, WASMFunctionInstance *func)
-{
-    frame->sp_bottom = frame->lp + func->param_cell_num + func->local_cell_num;
-    frame->sp_boundary = frame->sp_bottom + func->u.func->max_stack_cell_num;
-    frame->csp_bottom = frame->sp_boundary;
-    frame->csp_boundary = frame->csp_bottom + func->u.func->max_block_num;
-}
+// static void
+// _initialize_frame_boundaries(WASMInterpFrame *frame, WASMFunctionInstance *func)
+// {
+//     frame->sp_bottom = frame->lp + func->param_cell_num + func->local_cell_num;
+//     frame->sp_boundary = frame->sp_bottom + func->u.func->max_stack_cell_num;
+//     frame->csp_bottom = frame->sp_boundary;
+//     frame->csp_boundary = frame->csp_bottom + func->u.func->max_block_num;
+// }
 
 static void
 _restore_value_stacks(WASMInterpFrame *frame, WASMFunctionInstance *func, CallStackEntry *entry)
 {
     // 値スタック（SP）のサイズ復元
     uint32 stack_size = entry->value_stack.values.size;
-    frame->sp = frame->sp_bottom + stack_size;
-    wasmig_debug("restore sp");
+    // frame->sp = frame->sp_bottom + stack_size;
+    // wasmig_debug("restore sp");
 
     // restore locals
     uint32 local_cell_num = func->param_cell_num + func->local_cell_num;
@@ -46,103 +65,8 @@ _restore_value_stacks(WASMInterpFrame *frame, WASMFunctionInstance *func, CallSt
     memcpy(frame->lp, entry->locals.values.contents, entry->locals.values.size * sizeof(uint32_t));
 
     // restore value stack
-    memcpy(frame->sp_bottom, entry->value_stack.values.contents, entry->value_stack.values.size * sizeof(uint32_t));
+    memcpy(frame->lp, entry->value_stack.values.contents, entry->value_stack.values.size * sizeof(uint32_t));
     wasmig_debug("restore value stack");
-}
-
-static void
-_restore_label_stack_v1(WASMInterpFrame *frame, WASMCSPFrame *csp_frame)
-{
-    // ラベルスタックのサイズ設定
-    CallStackEntry *entry = &csp_frame->entry;
-    uint32 ctrl_stack_size = entry->label_stack.size;
-    if (ctrl_stack_size != csp_frame->csp_size) {
-        wasmig_error("control stack size mismatch: (expect=%d, actual=%d)",
-                     ctrl_stack_size, csp_frame->csp_size);
-    } else {
-        wasmig_info("control stack size match: (expect=%d, actual=%d)",
-                     ctrl_stack_size, csp_frame->csp_size);
-    }
-    frame->csp = frame->csp_bottom + ctrl_stack_size;
-
-    // ラベルスタックの復元
-    WASMBranchBlock *csp = frame->csp_bottom;
-    for (int i = 0; i < ctrl_stack_size; ++i, ++csp) {
-        uint64 offset;
-        CSPEntry *csp_entry = &csp_frame->csp[i];
-
-        // begin_addr の復元
-        offset = entry->label_stack.begins[i];
-        csp->begin_addr = set_addr_offset(wasm_get_func_code(frame->function), offset);
-        if (csp->begin_addr != csp_entry->begin_addr) {
-            wasmig_error("control stack begin_addr mismatch: (actual=%p, expect=%p)",
-                         csp_entry->begin_addr, csp->begin_addr);
-        }
-
-        // target_addr の復元
-        offset = entry->label_stack.targets[i];
-        csp->target_addr = set_addr_offset(wasm_get_func_code(frame->function), offset);
-        if (csp->target_addr != csp_entry->target_addr) {
-            wasmig_error("control stack target_addr mismatch: (actual=%p, expect=%p)",
-                         csp_entry->target_addr, csp->target_addr);
-        } else {
-            wasmig_info("control stack target_addr match: (actual=%p, expect=%p)",
-                         csp_entry->target_addr, csp->target_addr);
-        }
-
-        // frame_sp の復元
-        offset = entry->label_stack.stack_pointers[i];
-        csp->frame_sp = set_addr_offset(frame->sp_bottom, offset);
-        if (offset != csp_entry->sp_offset) {
-            wasmig_error("control stack sp_offset mismatch: (actual=%d, expect=%d)",
-                         csp_entry->sp_offset, offset);
-        } else {
-            wasmig_info("control stack sp_offset match: (actual=%d, expect=%d)",
-                         csp_entry->sp_offset, offset);
-        }
-
-        // cell_num の復元
-        offset = entry->label_stack.cell_nums[i];
-        csp->cell_num = offset;
-        if (csp->cell_num != csp_entry->cell_num) {
-            wasmig_error("control stack cell_num mismatch: (actual=%d, expect=%d)",
-                         csp_entry->cell_num, csp->cell_num);
-        } else {
-            wasmig_info("control stack cell_num match: (actual=%d, expect=%d)",
-                         csp_entry->cell_num, csp->cell_num);
-        }
-    }
-    wasmig_info("Correct restore label stack");
-    wasmig_info("restore label stack");
-}
-
-// restore label stack without dumped state
-static void
-_restore_label_stack_v2(WASMInterpFrame *frame, WASMCSPFrame *csp_frame)
-{
-    // ラベルスタックのサイズ設定
-    uint32 ctrl_stack_size = csp_frame->csp_size;
-    frame->csp = frame->csp_bottom + ctrl_stack_size;
-
-    // ラベルスタックの復元
-    WASMBranchBlock *csp = frame->csp_bottom;
-    for (int i = 0; i < ctrl_stack_size; ++i, ++csp) {
-        uint64 offset;
-        CSPEntry *csp_entry = &csp_frame->csp[i];
-
-        // begin_addr の復元
-        csp->begin_addr = csp_entry->begin_addr;
-
-        // target_addr の復元
-        csp->target_addr = csp_entry->target_addr;
-
-        // frame_sp の復元
-        csp->frame_sp = set_addr_offset(frame->sp_bottom, csp_entry->sp_offset);
-
-        // cell_num の復元
-        csp->cell_num = csp_entry->cell_num;
-    }
-    wasmig_info("restore label stack");
 }
 
 static void
@@ -155,13 +79,10 @@ _restore_frame(WASMExecEnv *exec_env, WASMInterpFrame *frame, WASMCSPFrame *csp)
     _restore_program_counter(frame, &csp->entry);
 
     // Initialize frame boundaries
-    _initialize_frame_boundaries(frame, func);
+    // _initialize_frame_boundaries(frame, func);
 
     // restore locals and value stack
     _restore_value_stacks(frame, func, &csp->entry);
-
-    // restore label stack
-    _restore_label_stack_v2(frame, csp);
 }
 
 // Allocate frame
