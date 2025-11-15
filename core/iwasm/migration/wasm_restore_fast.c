@@ -13,6 +13,20 @@
 #include <wasmig/registry.h>
 
 #if WASM_ENABLE_FAST_INTERP != 0
+static inline void
+word_copy(uint32 *dest, uint32 *src, unsigned num)
+{
+    bh_assert(dest != NULL);
+    bh_assert(src != NULL);
+    bh_assert(num > 0);
+    if (dest != src) {
+        /* No overlap buffer */
+        bh_assert(!((src < dest) && (dest < src + num)));
+        for (; num > 0; num--)
+            *dest++ = *src++;
+    }
+}
+
 static inline WASMInterpFrame *
 wasm_alloc_frame(WASMExecEnv *exec_env, uint32 size, WASMInterpFrame *prev_frame)
 {
@@ -53,7 +67,6 @@ _restore_value_stacks(WASMInterpFrame *frame, WASMFunctionInstance *func, CallSt
 {
     // 値スタック（SP）のサイズ復元
     uint32 stack_size = entry->value_stack.values.size;
-    frame->lp = frame->operand + func->const_cell_num;
     // wasmig_debug("restore sp");
 
     // restore locals
@@ -105,6 +118,17 @@ _create_frame(WASMExecEnv *exec_env, WASMModuleInstance *module_inst,
         exit(1);
     }
     frame->function = cur_func;
+    frame->lp = frame->operand + cur_func->const_cell_num;
+
+    /* Initialize the consts */
+    if (cur_wasm_func->const_cell_num > 0) {
+        word_copy(frame->operand, (uint32 *)cur_wasm_func->consts,
+                  cur_wasm_func->const_cell_num);
+    }
+
+    /* Initialize the local variables */
+    memset(frame->lp + cur_func->param_cell_num, 0,
+           (uint32)(cur_func->local_cell_num * 4));
     
     printf("Allocated frame for function index: %d, frame address: %p\n", pc.fidx, frame);
     return frame;

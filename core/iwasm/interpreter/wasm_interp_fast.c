@@ -9,6 +9,7 @@
 #include "wasm_opcode.h"
 #include "wasm_loader.h"
 #include "wasm_memory.h"
+#include <wasmig/log.h>
 #include "../common/wasm_exec_env.h"
 #if WASM_ENABLE_SHARED_MEMORY != 0
 #include "../common/wasm_shared_memory.h"
@@ -1144,7 +1145,6 @@ wasm_interp_dump_op_count()
         CHECK_DUMP();                                  \ 
         const void *p_label_addr = *(void **)frame_ip; \
         frame_ip += sizeof(void *);                    \
-        printf("dispatch to %p\n", p_label_addr);      \
         goto *p_label_addr;                            \
     } while (0)
 #else
@@ -1273,6 +1273,8 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
     clock_gettime(CLOCK_MONOTONIC, &ts1);
     fprintf(stderr, "boot_end, %lu\n", (uint64_t)(ts1.tv_sec*1e9) + ts1.tv_nsec);
 
+    // debug
+    // wasmig_info("const[0]=%d", *(uint32 *)(frame->lp-1))
     if (get_restore_flag()) {
         // bool done_flag;
         int rc;
@@ -1312,6 +1314,8 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
             perror("failed to restore\n");
             return;
         }
+        cur_func = frame->function;
+        prev_frame = frame->prev_frame;
         frame_ip = frame->ip;
         frame_lp = frame->lp;
         linear_mem_size = memory ? memory->memory_data_size : 0;
@@ -1324,6 +1328,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
             sig_flag = 1;
         }
 
+        // wasmig_info("const[0]=%d", *(uint32 *)(frame->lp-1));
         printf("Resume code\n");
         FETCH_OPCODE_AND_DISPATCH();
     }
@@ -1387,6 +1392,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
                 CHECK_SUSPEND_FLAGS();
 #endif
                 cond = frame_lp[GET_OFFSET()];
+                wasmig_debug("br_if cond: %d\n", cond);
 
                 if (cond)
                     goto recover_br_info;
@@ -1790,6 +1796,8 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
                 addr_ret = GET_OFFSET();
                 CHECK_MEMORY_OVERFLOW(1);
                 frame_lp[addr_ret] = (uint32)(*(uint8 *)(maddr));
+                wasmig_debug("i32_load8_u addr: %u, val: %u\n",
+                            addr + offset, frame_lp[addr_ret]);
                 HANDLE_OP_END();
             }
 
@@ -3737,6 +3745,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
                 CHECK_SUSPEND_FLAGS();
 #endif
                 fidx = read_uint32(frame_ip);
+                wasmig_debug("call function index: %u\n", fidx);
 #if WASM_ENABLE_MULTI_MODULE != 0
                 if (fidx >= module->e->function_count) {
                     wasm_set_exception(module, "unknown function");
@@ -3908,11 +3917,13 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
                     outs_area->lp,
                     GET_OPERAND(uint64, I64,
                                 2 * (cur_func->param_count - i - 1)));
+                wasmig_debug("param %d: %lld\n", i, (uint64)outs_area->lp[0]);
                 outs_area->lp += 2;
             }
             else {
                 *outs_area->lp = GET_OPERAND(
                     uint32, I32, (2 * (cur_func->param_count - i - 1)));
+                wasmig_debug("param %d: %lld\n", i, (uint32)outs_area->lp[0]);
                 outs_area->lp++;
             }
         }
@@ -3994,6 +4005,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
                 word_copy(frame->operand, (uint32 *)cur_wasm_func->consts,
                           cur_wasm_func->const_cell_num);
             }
+            // wasmig_info("fidx=%d, const[0]=%d", cur_func - module->e->functions, *(uint32 *)(frame->lp-1));
 
             /* Initialize the local variables */
             memset(frame_lp + cur_func->param_cell_num, 0,
@@ -4016,6 +4028,8 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
             /* Called from native. */
             return;
 
+        wasmig_debug("return to caller function index: %u\n",
+               prev_frame->function - module->e->functions);
         RECOVER_CONTEXT(prev_frame);
         HANDLE_OP_END();
     }

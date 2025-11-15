@@ -8883,6 +8883,7 @@ re_scan:
                     emit_label(WASM_OP_I32_CONST);
                     emit_uint32(loader_ctx, i32_const);
                 }
+                // wasmig_info("compile i32_const: (value=%d, offset=%d, emitted=%s)", i32_const, operand_offset, disable_emit ? "false" : "true");
 #else
                 (void)i32_const;
 #endif
