@@ -1144,6 +1144,7 @@ wasm_interp_dump_op_count()
         CHECK_DUMP();                                  \ 
         const void *p_label_addr = *(void **)frame_ip; \
         frame_ip += sizeof(void *);                    \
+        printf("dispatch to %p\n", p_label_addr);      \
         goto *p_label_addr;                            \
     } while (0)
 #else
@@ -1323,6 +1324,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
             sig_flag = 1;
         }
 
+        printf("Resume code\n");
         FETCH_OPCODE_AND_DISPATCH();
     }
 

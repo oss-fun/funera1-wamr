@@ -240,7 +240,7 @@ _restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, WASM
     wasmig_debug("restore frame\n");
 }
 
-WASMInterpFrame*
+void
 wasm_restore_stack(WASMExecEnv **_exec_env)
 {
     wasmig_info("wasm_restore_stack\n");
@@ -264,7 +264,6 @@ wasm_restore_stack(WASMExecEnv **_exec_env)
     _exec_env = &exec_env;
     
     wasmig_info("Finish to restore stack\n");
-    return wasm_exec_env_get_cur_frame(exec_env);
 }
 
 void restore_dirty_memory(WASMMemoryInstance **memory, FILE* memory_fp) {
