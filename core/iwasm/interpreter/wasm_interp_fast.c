@@ -9,6 +9,8 @@
 #include "wasm_opcode.h"
 #include "wasm_loader.h"
 #include "wasm_memory.h"
+#include <wasmig/table_v3.h>
+#include <wasmig/registry.h>
 #include <wasmig/log.h>
 #include "../common/wasm_exec_env.h"
 #if WASM_ENABLE_SHARED_MEMORY != 0
@@ -1118,6 +1120,7 @@ wasm_interp_dump_op_count()
 
 #define DO_CHECKPOINT()                                                     \
     do {                                                                    \
+        wasmig_forbidden_list_print(foblist);                               \
         SYNC_ALL_TO_FRAME();                                                \
         uint8 *dummy_ip;                                                    \
         uint32 *dummy_sp;                                                   \
@@ -1135,7 +1138,7 @@ wasm_interp_dump_op_count()
     } while(0)                                                              
 
 #define CHECK_DUMP()                                                        \
-    if (sig_flag) {                                                         \
+    if (sig_flag && !wasmig_forbidden_list_contains(foblist, frame_ip)) {   \
         DO_CHECKPOINT();                                                    \
     }
 
@@ -1263,6 +1266,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
         return;
     }
 #endif
+    CheckpointForbiddenList foblist = wasmig_forbidden_list_load();
 
     // register signal handler for C/R
     printf("register signal handler for C/R at fast interpreter\n");

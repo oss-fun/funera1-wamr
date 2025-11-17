@@ -7257,6 +7257,7 @@ wasm_loader_prepare_bytecode(WASMModule *module, WASMFunction *func,
     loader_ctx->metadata_address_stack = wasmig_stack_create();
     loader_ctx->metadata_type_stack = wasmig_stack_create();
     loader_ctx->is_rescaned = false;
+    loader_ctx->checkpoint_forbidden_list = wasmig_forbidden_list_exists() ? wasmig_forbidden_list_load() : wasmig_forbidden_list_create(0);
     AddressMap metadata_address_map = (!wasmig_address_map_exists() ? wasmig_address_map_create(0) : wasmig_address_map_load());
     Stack metadata_call_site_type_stack, metadata_call_site_address_stack;
     
@@ -10300,6 +10301,7 @@ re_scan:
     wasmig_address_map_save(metadata_address_map);
     if (!loader_ctx->is_rescaned) {
         wasmig_stack_state_map_registry_save(fidx, loader_ctx->metadata_stack_map);
+        wasmig_forbidden_list_save(loader_ctx->checkpoint_forbidden_list);
     }
     if (func->is_restore_frame) {
         func->frame->csp_size = csp_height;
