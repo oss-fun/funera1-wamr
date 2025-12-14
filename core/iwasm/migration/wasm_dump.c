@@ -199,13 +199,13 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
     _setup_value_stacks(frame, call_pos, is_stack_top, &locals, &value_stack);
 
     // ラベルスタックの設定
-    LabelStack labels = _setup_label_stack(frame);
+    // LabelStack labels = _setup_label_stack(frame);
 
     // エントリに情報を設定
     entry->pc = call_pos;
     entry->locals = locals;
     entry->value_stack = value_stack;
-    entry->label_stack = labels;
+    entry->label_stack = (LabelStack){0, NULL, NULL, NULL, NULL};
 }
 
 

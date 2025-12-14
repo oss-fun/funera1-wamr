@@ -34,6 +34,23 @@
 #define TEMPLATE_READ_VALUE(Type, p) \
     (p += sizeof(Type), *(Type *)(p - sizeof(Type)))
 
+    
+#define HANDLE_OPCODE(opcode) #opcode
+DEFINE_GOTO_TABLE(const char *, opcode_names);
+
+// helper function for type stack
+static inline uint32 wasm_type_width(uint8 type) {
+    switch (type) {
+        case VALUE_TYPE_I32:
+        case VALUE_TYPE_F32: return 1;
+        case VALUE_TYPE_I64:
+        case VALUE_TYPE_F64: return 2;
+        default:
+            wasmig_error("unknown type");
+            return 4;
+    }
+}
+
 static void
 set_error_buf(char *error_buf, uint32 error_buf_size, const char *string)
 {
@@ -4971,6 +4988,8 @@ typedef struct BranchBlock {
     uint8 *else_addr;
     uint8 *end_addr;
     uint32 stack_cell_num;
+    Stack  metadata_addr_stack;
+    Stack  metadata_type_stack;
 #if WASM_ENABLE_FAST_INTERP != 0
     uint16 dynamic_offset;
     uint8 *code_compiled;
@@ -5295,19 +5314,6 @@ fail:
     return NULL;
 }
 
-// helper function for type stack
-static inline uint32 wasm_type_width(uint8 type) {
-    switch (type) {
-        case VALUE_TYPE_I32:
-        case VALUE_TYPE_F32: return 1;
-        case VALUE_TYPE_I64:
-        case VALUE_TYPE_F64: return 2;
-        default:
-            wasmig_error("unknown type");
-            return 4;
-    }
-}
-
 static bool
 wasm_loader_push_frame_ref(WASMLoaderContext *ctx, uint8 type, char *error_buf,
                            uint32 error_buf_size)
@@ -5433,6 +5439,8 @@ wasm_loader_push_frame_csp(WASMLoaderContext *ctx, uint8 label_type,
     ctx->frame_csp->block_type = block_type;
     ctx->frame_csp->start_addr = start_addr;
     ctx->frame_csp->stack_cell_num = ctx->stack_cell_num;
+    ctx->frame_csp->metadata_addr_stack = ctx->metadata_address_stack;
+    ctx->frame_csp->metadata_type_stack = ctx->metadata_type_stack;
 #if WASM_ENABLE_FAST_INTERP != 0
     ctx->frame_csp->dynamic_offset = ctx->dynamic_offset;
     ctx->frame_csp->patch_list = NULL;
@@ -7075,6 +7083,55 @@ fail:
 }
 #endif
 
+#define RESET_METADATA_STACK()                                          \
+    do {                                                                \
+        loader_ctx->metadata_address_stack =                            \
+            (loader_ctx->frame_csp-1)->metadata_addr_stack;             \
+        loader_ctx->metadata_type_stack =                               \
+            (loader_ctx->frame_csp-1)->metadata_type_stack;             \
+        BlockType *cur_block_type = &(loader_ctx->frame_csp-1)->block_type;  \
+        if (cur_block_type->is_value_type) {                            \
+            switch(cur_block_type->u.value_type) {                          \
+                case VALUE_TYPE_VOID:                                  \
+                    break;                                              \
+                case VALUE_TYPE_I32:                                   \
+                case VALUE_TYPE_F32:                                   \
+                case VALUE_TYPE_I64:                                   \
+                case VALUE_TYPE_F64:                                   \
+                    loader_ctx->metadata_address_stack =                \
+                        wasmig_stack_push(loader_ctx->metadata_address_stack, \
+                            loader_ctx->param_local_cell_num + loader_ctx->stack_cell_num); \
+                    loader_ctx->metadata_type_stack =                   \
+                        wasmig_stack_push(loader_ctx->metadata_type_stack, \
+                            wasm_type_width(cur_block_type->u.value_type));   \
+                    break;                                             \
+                default:                                              \
+                    printf("unimplemented value type 0x%x\n", cur_block_type->u.value_type); \
+                    exit(1);                                         \
+            }                                                         \
+        }                                                               \
+        else {                                                          \
+            for (i = 0; i < cur_block_type->u.type->param_count; i++) { \
+                /* pop metadata stack */                                \
+                loader_ctx->metadata_address_stack =                    \
+                    wasmig_stack_pop(loader_ctx->metadata_address_stack, NULL);\
+                loader_ctx->metadata_type_stack =                        \
+                    wasmig_stack_pop(loader_ctx->metadata_type_stack, NULL);   \
+            }                                                           \
+            for (i = 0; i < cur_block_type->u.type->result_count; i++) {\
+                /* push metadata stack */                               \
+                uint8 type = cur_block_type->u.type->types[             \
+                    cur_block_type->u.type->param_count + i];           \
+                loader_ctx->metadata_address_stack =                    \
+                    wasmig_stack_push(loader_ctx->metadata_address_stack,      \
+                        loader_ctx->param_local_cell_num+loader_ctx->stack_cell_num); \
+                loader_ctx->metadata_type_stack =                       \
+                    wasmig_stack_push(loader_ctx->metadata_type_stack,         \
+                        wasm_type_width(type));                         \
+            }                                                           \
+        }                                                               \
+    } while (0)
+
 /* reset the stack to the state of before entering the last block */
 #if WASM_ENABLE_FAST_INTERP != 0
 #define RESET_STACK()                                                     \
@@ -7093,6 +7150,7 @@ fail:
             (loader_ctx->frame_csp - 1)->stack_cell_num;               \
         loader_ctx->frame_ref =                                        \
             loader_ctx->frame_ref_bottom + loader_ctx->stack_cell_num; \
+        RESET_METADATA_STACK();                                        \
     } while (0)
 #endif
 
@@ -10211,6 +10269,10 @@ re_scan:
         if (func->is_restore_frame && offset == func->return_pos.offset) {
             csp_height = cur_stack_height;
             seen_stack_height = cur_stack_height;
+        }
+        
+        if (fidx == 28) {
+            printf("op: %s, stack size: %d\n", opcode_names[opcode], wasmig_stack_size(loader_ctx->metadata_type_stack)-local_count);
         }
 
 #if WASM_ENABLE_FAST_INTERP != 0
