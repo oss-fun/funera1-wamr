@@ -61,27 +61,93 @@ _restore_program_counter(WASMInterpFrame *frame, CallStackEntry *entry)
 //     frame->lp =
 //         frame->operand + func->const_cell_num;
 // }
+// 
 
-static void
-_restore_value_stacks(WASMInterpFrame *frame, WASMFunctionInstance *func, CallStackEntry *entry)
-{
-    // 値スタック（SP）のサイズ復元
-    uint32 stack_size = entry->value_stack.values.size;
-    // wasmig_debug("restore sp");
+static bool 
+rematerialize_stack_values(Stack addr_stack, Stack type_stack, Array32 stack, uint32** out_sp) {
+    uint32 stack_ptr = 0;
+    StackIterator addr_it = wasmig_stack_iterator_create(addr_stack);
+    StackIterator type_it = wasmig_stack_iterator_create(type_stack);
+    if (!addr_it || !type_it) {
+        wasmig_error("failed to create stack iterators\n");
+        if (addr_it) wasmig_stack_iterator_destroy(addr_it);
+        if (type_it) wasmig_stack_iterator_destroy(type_it);
+        return false;
+    }
 
-    // restore locals
-    uint32 local_cell_num = func->param_cell_num + func->local_cell_num;
-    printf("local_cell_num: %d\n", local_cell_num);
-    printf("locals.values.size: %d\n", entry->locals.values.size);
-    memcpy(frame->lp, entry->locals.values.contents, entry->locals.values.size * sizeof(uint32_t));
+    uint32 stack_size = stack.size;
+    uint32* value_buf = stack.contents;
+    stack_ptr = stack_size;
+    uint32 index = 0;
+    while (wasmig_stack_iterator_has_next(addr_it) && wasmig_stack_iterator_has_next(type_it)) {
+        index++;
+        uint64_t address = wasmig_stack_iterator_next(addr_it);
+        uint32 type = (uint32)wasmig_stack_iterator_next(type_it);
 
-    // restore value stack
-    memcpy(frame->lp+local_cell_num, entry->value_stack.values.contents, entry->value_stack.values.size * sizeof(uint32_t));
-    wasmig_debug("restore value stack");
+        switch (type) {
+            case 1: // i32
+            {
+                wasmig_debug("reconstruct stack[%u]: i32 %u\n", stack_ptr, (uint32)address);
+                // value_buf[stack_ptr] = (uint32)sp[(size_t)address];
+                (*out_sp)[(size_t)address] = (uint32)value_buf[stack_ptr];
+                break;
+            }
+            case 2: // i64
+            {
+                wasmig_debug("reconstruct stack[%u]: i64 %" PRIu64 "\n", stack_ptr, (uint64_t)address);
+                (*out_sp)[(size_t)address] = (uint32)value_buf[stack_ptr];
+                (*out_sp)[(size_t)address + 1] = (uint32)value_buf[stack_ptr+1];
+                break;
+            }
+            default:
+                wasmig_error("unknown type: %d\n", type);
+                break;
+        }
+    }
+    wasmig_stack_iterator_destroy(addr_it);
+    wasmig_stack_iterator_destroy(type_it);
+    return true;
+}
+
+Array32 merge_locals_and_value_stack(TypedArray locals, TypedArray value_stack) {
+    uint32 total_size = locals.values.size + value_stack.values.size;
+    uint32* merged_contents = malloc(total_size * sizeof(uint32));
+    if (!merged_contents) {
+        wasmig_error("failed to allocate memory for merged stack\n");
+        return (Array32){0, NULL};
+    }
+
+    memcpy(merged_contents, locals.values.contents, locals.values.size * sizeof(uint32));
+    memcpy(merged_contents + locals.values.size, value_stack.values.contents,
+           value_stack.values.size * sizeof(uint32));
+
+    return (Array32){total_size, merged_contents};
 }
 
 static void
-_restore_frame(WASMExecEnv *exec_env, WASMInterpFrame *frame, WASMCSPFrame *csp)
+_restore_value_stacks(WASMInterpFrame *frame, WASMFunctionInstance *func, CallStackEntry *entry, CodePos pc, bool is_stack_top)
+{
+    Stack addr_stack, type_stack;
+    uint32 fidx = pc.fidx;
+    uint32 offset = is_stack_top ? pc.offset : pc.offset + 1;
+
+    if (!load_metadata_stacks(fidx, offset, &addr_stack, &type_stack)) {
+        wasmig_error("failed to load metadata stacks\n");
+        return false;
+    }
+
+    Array32 stack = merge_locals_and_value_stack(entry->locals, entry->value_stack);
+    uint32** sp = &frame->lp;
+    if (!rematerialize_stack_values(addr_stack, type_stack, stack, sp)) {
+        wasmig_error("failed to rematerialize stack values\n");
+        return false;
+    }
+    
+    return true;
+}
+
+static void
+_restore_frame(WASMExecEnv *exec_env, WASMInterpFrame *frame, WASMCSPFrame *csp, bool is_stack_top)
 {
     WASMModuleInstance *module_inst = exec_env->module_inst;
     WASMFunctionInstance *func = frame->function;
@@ -93,7 +159,7 @@ _restore_frame(WASMExecEnv *exec_env, WASMInterpFrame *frame, WASMCSPFrame *csp)
     // _initialize_frame_boundaries(frame, func);
 
     // restore locals and value stack
-    _restore_value_stacks(frame, func, &csp->entry);
+    _restore_value_stacks(frame, func, &csp->entry, csp->entry.pc, is_stack_top);
 }
 
 // Allocate frame
@@ -147,7 +213,8 @@ _restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, WASM
         frame = _create_frame(exec_env, module_inst, csp_frame->entry.pc, prev_frame);
         
         // restore frame
-        _restore_frame(exec_env, frame, csp_frame);
+        bool is_stack_top = (i == cs->size - 1);
+        _restore_frame(exec_env, frame, csp_frame, is_stack_top);
         
         prev_frame = frame;
     }

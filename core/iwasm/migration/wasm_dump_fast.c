@@ -243,6 +243,18 @@ int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, ui
     wasmig_checkpoint_global(values, types, module->e->global_count);
 }
 
+int wasm_print_program_counter(
+    uint8 *frame_ip
+)
+{
+    CodePos pc = get_call_position(frame_ip);
+    if (!pc.fidx) {
+        return -1;
+    }
+    printf("pc: {fidx: %d, offset: %d}\n", pc.fidx, pc.offset);
+    return 0;
+}
+
 int wasm_dump_program_counter(
     WASMModuleInstance *module,
     WASMFunctionInstance *func,

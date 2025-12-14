@@ -4950,7 +4950,10 @@ fail:
 #if WASM_ENABLE_FAST_INTERP != 0
 
 #if WASM_DEBUG_PREPROCESSOR != 0
-#define LOG_OP(...) os_printf(__VA_ARGS__)
+#define HANDLE_OPCODE(opcode) #opcode
+DEFINE_GOTO_TABLE(const char *, opcode_names);
+#undef HANDLE_OPCODE
+#define LOG_OP(...) fprintf(stderr, __VA_ARGS__)
 #else
 #define LOG_OP(...) (void)0
 #endif
@@ -5489,7 +5492,7 @@ fail:
             wasmig_forbidden_list_add(loader_ctx->checkpoint_forbidden_list, loader_ctx->p_code_compiled); \
         }                                                       \
         wasm_loader_emit_ptr(loader_ctx, handle_table[opcode]); \
-        LOG_OP("\nemit_op [%02x]\t", opcode);                   \
+        LOG_OP("\nemit_op [%d, %s], addr=%ld\t", opcode, opcode_names[opcode], loader_ctx->p_code_compiled);       \
     } while (0)
 #define skip_label()                                            \
     do {                                                        \
@@ -7316,6 +7319,10 @@ re_scan:
 // #ifdef WASM_ENABLE_CUSTOM_NAME_SECTION != 0
 //     wasmig_debug("function name: %s", func->field_name);
 // #endif
+    // Add a head address to forbidden list to avoid setting a checkpoint at function entry
+    if (loader_ctx->is_rescaned) {
+        wasmig_forbidden_list_add(loader_ctx->checkpoint_forbidden_list, loader_ctx->p_code_compiled);
+    }
 
     while (p < p_end) {
         offset = p - func->code;

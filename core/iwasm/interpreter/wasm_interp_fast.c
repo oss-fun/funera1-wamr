@@ -1137,6 +1137,10 @@ wasm_interp_dump_op_count()
         exit(0);                                                            \
     } while(0)                                                              
 
+// #define HANDLE_OPCODE(opcode) #opcode
+// DEFINE_GOTO_TABLE(const char *, opcode_names);
+// #undef HANDLE_OPCODE
+
 #define CHECK_DUMP()                                                        \
     if (sig_flag && !wasmig_forbidden_list_contains(foblist, frame_ip)) {   \
         DO_CHECKPOINT();                                                    \
@@ -3749,7 +3753,6 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
                 CHECK_SUSPEND_FLAGS();
 #endif
                 fidx = read_uint32(frame_ip);
-                wasmig_debug("call function index: %u\n", fidx);
 #if WASM_ENABLE_MULTI_MODULE != 0
                 if (fidx >= module->e->function_count) {
                     wasm_set_exception(module, "unknown function");
@@ -3836,6 +3839,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
             goto got_exception;
         }
         
+#endif
         HANDLE_OP(WASM_OP_NOP)
         {
             char* env = getenv("NOP_CKPT"); 
@@ -3843,7 +3847,6 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
             HANDLE_OP_END(); 
         }
 
-#endif
 
 #if WASM_ENABLE_LABELS_AS_VALUES == 0
         continue;
