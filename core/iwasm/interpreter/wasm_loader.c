@@ -4984,6 +4984,8 @@ typedef struct BranchBlock {
      * opcode can know how many parameters should be copied to the stack */
     uint32 available_param_num;
 #endif
+    Stack  metadata_addr_stack;
+    Stack  metadata_type_stack;
 
     /* Indicate the operand stack is in polymorphic state.
      * If the opcode is one of unreachable/br/br_table/return, stack is marked
@@ -5443,6 +5445,8 @@ wasm_loader_push_frame_csp(WASMLoaderContext *ctx, uint8 label_type,
     ctx->frame_csp->block_type = block_type;
     ctx->frame_csp->start_addr = start_addr;
     ctx->frame_csp->stack_cell_num = ctx->stack_cell_num;
+    ctx->frame_csp->metadata_addr_stack = ctx->metadata_address_stack;
+    ctx->frame_csp->metadata_type_stack = ctx->metadata_type_stack;
 #if WASM_ENABLE_FAST_INTERP != 0
     ctx->frame_csp->dynamic_offset = ctx->dynamic_offset;
     ctx->frame_csp->patch_list = NULL;
@@ -7110,6 +7114,14 @@ fail:
 }
 #endif
 
+#define RESET_METADATA_STACK()                                          \
+    do {                                                                \
+        loader_ctx->metadata_address_stack =                            \
+            (loader_ctx->frame_csp-1)->metadata_addr_stack;             \
+        loader_ctx->metadata_type_stack =                               \
+            (loader_ctx->frame_csp-1)->metadata_type_stack;             \
+    } while (0)
+
 /* reset the stack to the state of before entering the last block */
 #if WASM_ENABLE_FAST_INTERP != 0
 #define RESET_STACK()                                                     \
@@ -7120,6 +7132,7 @@ fail:
             loader_ctx->frame_ref_bottom + loader_ctx->stack_cell_num;    \
         loader_ctx->frame_offset =                                        \
             loader_ctx->frame_offset_bottom + loader_ctx->stack_cell_num; \
+        RESET_METADATA_STACK();                                           \
     } while (0)
 #else
 #define RESET_STACK()                                                  \
