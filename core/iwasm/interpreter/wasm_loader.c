@@ -4949,6 +4949,8 @@ fail:
 
 #if WASM_ENABLE_FAST_INTERP != 0
 
+#define HANDLE_OPCODE(opcode) #opcode
+DEFINE_GOTO_TABLE(const char *, opcode_names);
 #if WASM_DEBUG_PREPROCESSOR != 0
 #define HANDLE_OPCODE(opcode) #opcode
 DEFINE_GOTO_TABLE(const char *, opcode_names);
@@ -5020,6 +5022,7 @@ typedef struct WASMLoaderContext {
     uint32 param_local_cell_num;
     bool is_emitted;
     bool is_rescaned;
+    bool disable_apply_stack;
     CheckpointForbiddenList checkpoint_forbidden_list;
 
 #if WASM_ENABLE_FAST_INTERP != 0
@@ -6044,7 +6047,7 @@ wasm_loader_push_frame_offset(WASMLoaderContext *ctx, uint8 type,
 #if WASM_ENABLE_FAST_INTERP != 0
     /* push metadata stack */
     // TODO: must check if a pushed address is correct
-    if (!ctx->is_rescaned) {
+    if (!ctx->is_rescaned && !ctx->disable_apply_stack) {
         ctx->metadata_address_stack = wasmig_stack_push(ctx->metadata_address_stack, *(ctx->frame_offset-1));
         ctx->metadata_type_stack = wasmig_stack_push(ctx->metadata_type_stack, wasm_type_width(type));
     }
@@ -6450,7 +6453,9 @@ reserve_block_ret(WASMLoaderContext *loader_ctx, uint8 opcode,
             else {
                 loader_ctx->frame_offset -= cell;
                 loader_ctx->dynamic_offset = block->dynamic_offset;
+                loader_ctx->disable_apply_stack = true;
                 PUSH_OFFSET_TYPE(return_types[0]);
+                loader_ctx->disable_apply_stack = false;
                 wasm_loader_emit_backspace(loader_ctx, sizeof(int16));
             }
             if (opcode == WASM_OP_ELSE)
@@ -6532,7 +6537,9 @@ reserve_block_ret(WASMLoaderContext *loader_ctx, uint8 opcode,
             else {
                 loader_ctx->frame_offset = frame_offset;
                 loader_ctx->dynamic_offset = dynamic_offset;
+                loader_ctx->disable_apply_stack = true;
                 PUSH_OFFSET_TYPE(return_types[i]);
+                loader_ctx->disable_apply_stack = false;
                 wasm_loader_emit_backspace(loader_ctx, sizeof(int16));
                 loader_ctx->frame_offset = frame_offset_org;
                 loader_ctx->dynamic_offset = dynamic_offset_org;
@@ -7273,6 +7280,7 @@ wasm_loader_prepare_bytecode(WASMModule *module, WASMFunction *func,
     loader_ctx->metadata_address_stack = wasmig_stack_create();
     loader_ctx->metadata_type_stack = wasmig_stack_create();
     loader_ctx->is_rescaned = false;
+    loader_ctx->disable_apply_stack = false;
     loader_ctx->checkpoint_forbidden_list = wasmig_forbidden_list_exists() ? wasmig_forbidden_list_load() : wasmig_forbidden_list_create(0);
     AddressMap metadata_address_map = (!wasmig_address_map_exists() ? wasmig_address_map_create(0) : wasmig_address_map_load());
     Stack metadata_call_site_type_stack, metadata_call_site_address_stack;
@@ -10301,6 +10309,10 @@ re_scan:
         if (func->is_restore_frame && offset == func->return_pos.offset) {
             csp_height = cur_stack_height;
             seen_stack_height = cur_stack_height;
+        }
+
+        if (fidx == 28) {
+            printf("op: %s, offset: %d, stack size: %d\n", opcode_names[opcode], offset, wasmig_stack_size(loader_ctx->metadata_type_stack)-local_count-param_count);
         }
 
 #if WASM_ENABLE_FAST_INTERP != 0

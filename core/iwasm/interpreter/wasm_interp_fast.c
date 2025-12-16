@@ -1120,7 +1120,6 @@ wasm_interp_dump_op_count()
 
 #define DO_CHECKPOINT()                                                     \
     do {                                                                    \
-        wasmig_forbidden_list_print(foblist);                               \
         SYNC_ALL_TO_FRAME();                                                \
         uint8 *dummy_ip;                                                    \
         uint32 *dummy_sp;                                                   \

@@ -83,6 +83,7 @@ rematerialize_stack_values(Stack addr_stack, Stack type_stack, Array32 stack, ui
         index++;
         uint64_t address = wasmig_stack_iterator_next(addr_it);
         uint32 type = (uint32)wasmig_stack_iterator_next(type_it);
+        stack_ptr -= type;
 
         switch (type) {
             case 1: // i32
