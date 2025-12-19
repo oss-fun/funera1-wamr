@@ -3587,7 +3587,6 @@ load_from_sections(WASMModule *module, WASMSection *sections,
 
     // Get call stack to emulate control stack
     WASMCSPFrameStack* csp_call_stack = load_wasm_call_stack();
-    wasmig_debug("Restoring control stack");
     // WASMCSPFrameStack csp_call_stack;
     if (get_restore_flag()) {
         csp_call_stack = realloc(csp_call_stack, sizeof(WASMCSPFrameStack));
@@ -3600,7 +3599,6 @@ load_from_sections(WASMModule *module, WASMSection *sections,
             CallStackEntry frame = call_stack.entries[i];
             WASMFunction *func = module->functions[frame.pc.fidx - module->import_function_count];
             WASMCSPFrame *csp_frame = &csp_call_stack->frames[i];
-            wasmig_debug("Restoring frame %d: (fidx=%d, offset=%d)", i, frame.pc.fidx, frame.pc.offset);
             func->is_restore_frame = true;
             func->return_pos = frame.pc;
             csp_frame->entry = frame;  // 値をコピー
@@ -3610,7 +3608,6 @@ load_from_sections(WASMModule *module, WASMSection *sections,
         }
     }
 
-    wasmig_debug("prepare_bytecode");
     for (i = 0; i < module->function_count; i++) {
         WASMFunction *func = module->functions[i];
         if (!wasm_loader_prepare_bytecode(module, func, i, error_buf,
@@ -6593,8 +6590,6 @@ fail:
 #define PUSH_CSP_FOR_RESTORE(_label_type, _start_addr, _cell_num)              \
     do {                                                                    \
         if (func->is_restore_frame) {                                           \
-            wasmig_debug("PUSH_CSP_FOR_RESTORE: offset=%d, label_type=%d, stack_size=%d->%d, sp_offset=%d", \
-                         offset, _label_type, cur_stack_height, cur_stack_height+1, loader_ctx->stack_cell_num);   \
             if (offset <= func->return_pos.offset) {                           \
                 csp[cur_stack_height].label_type = _label_type;                \
                 csp[cur_stack_height].begin_addr = _start_addr;                \
@@ -6609,11 +6604,8 @@ fail:
 #define POP_CSP_FOR_RESTORE(end_addr)                                           \
     do {                                                                        \
         if (func->is_restore_frame) {                                           \
-            wasmig_debug("POP_CSP_FOR_RESTORE: label_type=%d, stack_size=%d->%d", \
-                         csp->label_type, cur_stack_height, cur_stack_height-1); \
             if (func->return_pos.offset < offset) {                                 \
                if (cur_stack_height == seen_stack_height) {                              \
-                   wasmig_debug("\tseen_stack_height=%d", seen_stack_height);             \
                    seen_stack_height--;                                             \
                     if (csp[seen_stack_height].label_type == LABEL_TYPE_LOOP) {                       \
                         csp[seen_stack_height].target_addr = csp[seen_stack_height].begin_addr;                         \
@@ -7286,18 +7278,14 @@ wasm_loader_prepare_bytecode(WASMModule *module, WASMFunction *func,
     Stack metadata_call_site_type_stack, metadata_call_site_address_stack;
     
     //  push local to metadata stack 
-    // wasmig_info("[prepare_bytecode] param count %d", param_count);
     uint32 fidx = module->import_function_count + cur_func_idx;
     uint32 param_local_cell_num = 0;
     for (int i = 0; i < param_count; i++) {
-        // wasmig_debug("[prepare_bytecode] func %d, param %d, type: %d", fidx, i, param_types[i]);
         loader_ctx->metadata_address_stack = wasmig_stack_push(loader_ctx->metadata_address_stack, param_local_cell_num);
         loader_ctx->metadata_type_stack = wasmig_stack_push(loader_ctx->metadata_type_stack, wasm_type_width(param_types[i]));
         param_local_cell_num += wasm_type_width(param_types[i]);
     }
-    // wasmig_info("[prepare_bytecode] local count %d", local_count);
     for (int i = 0; i < local_count; i++) {
-        // wasmig_info("[prepare_bytecode] func %d, local %d, type: %d", fidx, i, local_types[i]);
         loader_ctx->metadata_address_stack = wasmig_stack_push(loader_ctx->metadata_address_stack, param_local_cell_num);
         loader_ctx->metadata_type_stack = wasmig_stack_push(loader_ctx->metadata_type_stack, wasm_type_width(local_types[i]));
         param_local_cell_num += wasm_type_width(local_types[i]);
@@ -7337,9 +7325,6 @@ re_scan:
     PUSH_CSP(LABEL_TYPE_FUNCTION, func_block_type, p);
     PUSH_CSP_FOR_RESTORE(LABEL_TYPE_FUNCTION, p, func->ret_cell_num);
 
-// #ifdef WASM_ENABLE_CUSTOM_NAME_SECTION != 0
-//     wasmig_debug("function name: %s", func->field_name);
-// #endif
     // Add a head address to forbidden list to avoid setting a checkpoint at function entry
     if (loader_ctx->is_rescaned) {
         wasmig_forbidden_list_add(loader_ctx->checkpoint_forbidden_list, loader_ctx->p_code_compiled);
@@ -8912,7 +8897,6 @@ re_scan:
                     emit_label(WASM_OP_I32_CONST);
                     emit_uint32(loader_ctx, i32_const);
                 }
-                // wasmig_info("compile i32_const: (value=%d, offset=%d, emitted=%s)", i32_const, operand_offset, disable_emit ? "false" : "true");
 #else
                 (void)i32_const;
 #endif
@@ -10284,7 +10268,6 @@ re_scan:
         }
         
         // construct metadatas
-        // wasmig_debug("frame_ip: %p, fidx: %u, offset: %u", (void*)p, fidx, offset);
 #if WASM_ENABLE_FAST_INTERP != 0
         if (loader_ctx->is_emitted) {
             wasmig_address_map_set_bidirect(metadata_address_map, fidx, offset, loader_ctx->p_code_compiled);
@@ -10311,9 +10294,9 @@ re_scan:
             seen_stack_height = cur_stack_height;
         }
 
-        if (fidx == 28) {
-            printf("op: %s, offset: %d, stack size: %d\n", opcode_names[opcode], offset, wasmig_stack_size(loader_ctx->metadata_type_stack)-local_count-param_count);
-        }
+        // if (fidx == 28) {
+        //     printf("op: %s, offset: %d, stack size: %d\n", opcode_names[opcode], offset, wasmig_stack_size(loader_ctx->metadata_type_stack)-local_count-param_count);
+        // }
 
 #if WASM_ENABLE_FAST_INTERP != 0
         last_op = opcode;
@@ -10337,20 +10320,7 @@ re_scan:
     }
     if (func->is_restore_frame) {
         func->frame->csp_size = csp_height;
-        wasmig_debug("starting csp_entry_clone...");
         func->frame->csp = csp_entry_clone(csp, csp_height);
-        
-        wasmig_debug("function: %d", fidx);
-        for (int i = 0; i < csp_height; i++) {
-            wasmig_debug("csp[%d]: label_type=%d, begin_addr=%p, target_addr=%p, sp_offset=%d, cell_num=%d", 
-                i, 
-                func->frame->csp[i].label_type, 
-                func->frame->csp[i].begin_addr,
-                func->frame->csp[i].target_addr,
-                func->frame->csp[i].sp_offset,
-                func->frame->csp[i].cell_num);
-        }
-        wasmig_debug("Restored control stack for function %d", cur_func_idx);
     }
 
     if (loader_ctx->csp_num > 0) {
@@ -10368,9 +10338,6 @@ re_scan:
 
 #if WASM_ENABLE_FAST_INTERP != 0
     if (loader_ctx->p_code_compiled == NULL) {
-        if (fidx == 21) {
-            wasmig_debug("jump re_scan at %d", fidx);
-        }
         goto re_scan;
     }
 

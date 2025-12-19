@@ -51,7 +51,7 @@ _restore_program_counter(WASMInterpFrame *frame, CallStackEntry *entry)
 {
     CodePos ret_pos = entry->pc;
     frame->ip = get_call_address(ret_pos.fidx, ret_pos.offset);
-    wasmig_debug("restore ip: (%d, %d)\n", entry->pc.fidx, entry->pc.offset);
+    // wasmig_debug("restore ip: (%d, %d)\n", entry->pc.fidx, entry->pc.offset);
 }
 
 // Initialize stack and call stack boundaries
@@ -88,14 +88,14 @@ rematerialize_stack_values(Stack addr_stack, Stack type_stack, Array32 stack, ui
         switch (type) {
             case 1: // i32
             {
-                wasmig_debug("reconstruct stack[%u]: i32 %u\n", stack_ptr, (uint32)address);
+                // wasmig_debug("reconstruct stack[%u]: i32 %u\n", stack_ptr, (uint32)address);
                 // value_buf[stack_ptr] = (uint32)sp[(size_t)address];
                 (*out_sp)[(size_t)address] = (uint32)value_buf[stack_ptr];
                 break;
             }
             case 2: // i64
             {
-                wasmig_debug("reconstruct stack[%u]: i64 %" PRIu64 "\n", stack_ptr, (uint64_t)address);
+                // wasmig_debug("reconstruct stack[%u]: i64 %" PRIu64 "\n", stack_ptr, (uint64_t)address);
                 (*out_sp)[(size_t)address] = (uint32)value_buf[stack_ptr];
                 (*out_sp)[(size_t)address + 1] = (uint32)value_buf[stack_ptr+1];
                 break;
@@ -222,13 +222,13 @@ _restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, WASM
     
     // 最新のフレームを設定
     wasm_exec_env_set_cur_frame(exec_env, frame);
-    wasmig_debug("restore frame\n");
+    // wasmig_debug("restore frame\n");
 }
 
 void
 wasm_restore_stack(WASMExecEnv **_exec_env)
 {
-    wasmig_info("wasm_restore_stack\n");
+    // wasmig_info("wasm_restore_stack\n");
     
     WASMExecEnv *exec_env = *_exec_env;
     WASMModuleInstance *module_inst = (WASMModuleInstance *)exec_env->module_inst;
@@ -240,7 +240,7 @@ wasm_restore_stack(WASMExecEnv **_exec_env)
         wasmig_error("Failed to load call stack");
         return NULL;
     }
-    wasmig_debug("restore_stack: cs.size: %d\n", cs->size);
+    // wasmig_debug("restore_stack: cs.size: %d\n", cs->size);
     // print_call_stack(&cs);
     
     // 全フレームの復元
@@ -248,7 +248,7 @@ wasm_restore_stack(WASMExecEnv **_exec_env)
     
     _exec_env = &exec_env;
     
-    wasmig_info("Finish to restore stack\n");
+    // wasmig_info("Finish to restore stack\n");
 }
 
 void restore_dirty_memory(WASMMemoryInstance **memory, FILE* memory_fp) {
@@ -273,7 +273,7 @@ int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory,
 
     // restore page_count
     uint32 page_count = mem.size / (*memory)->num_bytes_per_page;
-    wasmig_debug("[Restore memory] page_count: %d", page_count);
+    // wasmig_debug("[Restore memory] page_count: %d", page_count);
     wasm_enlarge_memory(module, page_count- (*memory)->cur_page_count);
     *maddr = page_count * (*memory)->num_bytes_per_page;
 
