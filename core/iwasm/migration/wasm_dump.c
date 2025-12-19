@@ -30,8 +30,8 @@ bool load_metadata_stacks(uint32 fidx, uint32 offset, Stack* addr_stack, Stack* 
         wasmig_error("failed to load metadata stack\n");
         return false;
     }
-    wasmig_stack_print(*addr_stack);
-    wasmig_stack_print(*type_stack);
+    // wasmig_stack_print(*addr_stack);
+    // wasmig_stack_print(*type_stack);
     return true;
 }
 
@@ -62,15 +62,15 @@ bool materialize_stack_values(Stack addr_stack, Stack type_stack,
         switch (type) {
             case 1: // i32
             {
-                wasmig_debug("reconstruct stack[%u]: i32 %u\n", stack_ptr, (uint32)address);
+                // wasmig_debug("reconstruct stack[%u]: i32 %u\n", stack_ptr, (uint32)address);
                 uint32 value = (uint32)sp[(size_t)address];   // indexをsize_tに
                 value_buf[stack_ptr] = value;
-                wasmig_debug("value_buf[%u]: %u\n", stack_ptr, value);
+                // wasmig_debug("value_buf[%u]: %u\n", stack_ptr, value);
                 break;
             }
             case 2: // i64
             {
-                wasmig_debug("reconstruct stack[%u]: i64 %" PRIu64 "\n", stack_ptr, (uint64_t)address);
+                // wasmig_debug("reconstruct stack[%u]: i64 %" PRIu64 "\n", stack_ptr, (uint64_t)address);
                 value_buf[stack_ptr]   = (uint32)sp[(size_t)address];
                 value_buf[stack_ptr+1] = (uint32)sp[(size_t)address + 1];
                 break;
@@ -126,8 +126,8 @@ _setup_value_stacks(struct WASMInterpFrame *frame, CodePos call_pos, bool is_sta
     }
     uint32 local_count = func->param_count + func->local_count;
     uint32 local_size = func->param_cell_num + func->local_cell_num;
-    wasmig_info("stack_count=%d, stack_size=%d\n", stack_count, stack_size);
-    wasmig_info("local_count=%d, local_size=%d\n", local_count, local_size);
+    // wasmig_info("stack_count=%d, stack_size=%d\n", stack_count, stack_size);
+    // wasmig_info("local_count=%d, local_size=%d\n", local_count, local_size);
     
     // get states
     // Array8 locals_types = get_local_types(call_pos.fidx);
@@ -152,8 +152,8 @@ _setup_value_stacks(struct WASMInterpFrame *frame, CodePos call_pos, bool is_sta
     out_value_stack->values = (Array32){stack_size - local_size, value_buf + local_size};
     
     // print log
-    wasmig_info("locals: {count=%d, size=%d}\n", local_count, local_size);
-    wasmig_info("value_stack: {count=%d, size=%d}\n", stack_count - local_count, stack_size - local_size);
+    // wasmig_info("locals: {count=%d, size=%d}\n", local_count, local_size);
+    // wasmig_info("value_stack: {count=%d, size=%d}\n", stack_count - local_count, stack_size - local_size);
 
     return true;
 }
@@ -192,7 +192,7 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
 
     // プログラムカウンタの処理
     CodePos call_pos = get_call_position(frame->ip);
-    wasmig_debug("call_stack_id: %d, fidx: %d, offset: %d\n", call_stack_id, call_pos.fidx, call_pos.offset);
+    // wasmig_debug("call_stack_id: %d, fidx: %d, offset: %d\n", call_stack_id, call_pos.fidx, call_pos.offset);
 
     // 値スタックの設定
     TypedArray locals, value_stack;
@@ -232,10 +232,10 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
     };
 
     // frame stackのサイズを保存
-    CallStack cs = {.size = call_stack_size, .entries = entries};
-    print_call_stack(&cs);
+    // CallStack cs = {.size = call_stack_size, .entries = entries};
+    // print_call_stack(&cs);
     wasmig_checkpoint_stack_v4(call_stack_size, entries);
-    wasmig_info("Success to dump frame stack\n");
+    // wasmig_info("Success to dump frame stack\n");
 
     return 0;
 }
@@ -293,6 +293,9 @@ int wasm_dump(WASMExecEnv *exec_env,
 {
     int rc;
     struct timespec ts1, ts2;
+
+    // header
+    fprintf(stderr, "checkpoint item, time_ns\n");
 
     // dump linear memory
     clock_gettime(CLOCK_MONOTONIC, &ts1);
