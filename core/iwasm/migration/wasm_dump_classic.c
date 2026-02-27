@@ -243,7 +243,8 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
 
 
 int wasm_dump_memory(WASMMemoryInstance *memory) {
-    wasmig_checkpoint_memory(memory->memory_data, memory->cur_page_count);
+    int page_size_rate = memory->num_bytes_per_page / WASM_PAGE_SIZE;
+    wasmig_checkpoint_memory(memory->memory_data, memory->cur_page_count * page_size_rate);
 }
 
 int wasm_dump_global(WASMModuleInstance *module, WASMGlobalInstance *globals, uint8* global_data) {

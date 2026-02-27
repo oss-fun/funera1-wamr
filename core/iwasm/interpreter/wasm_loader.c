@@ -7341,9 +7341,11 @@ re_scan:
 //     wasmig_debug("function name: %s", func->field_name);
 // #endif
     // Add a head address to forbidden list to avoid setting a checkpoint at function entry
+#if WASM_ENABLE_FAST_INTERP != 0
     if (loader_ctx->is_rescaned) {
         wasmig_forbidden_list_add(loader_ctx->checkpoint_forbidden_list, loader_ctx->p_code_compiled);
     }
+#endif
 
     while (p < p_end) {
         offset = p - func->code;
@@ -10309,10 +10311,6 @@ re_scan:
         if (func->is_restore_frame && offset == func->return_pos.offset) {
             csp_height = cur_stack_height;
             seen_stack_height = cur_stack_height;
-        }
-
-        if (fidx == 28) {
-            printf("op: %s, offset: %d, stack size: %d\n", opcode_names[opcode], offset, wasmig_stack_size(loader_ctx->metadata_type_stack)-local_count-param_count);
         }
 
 #if WASM_ENABLE_FAST_INTERP != 0
