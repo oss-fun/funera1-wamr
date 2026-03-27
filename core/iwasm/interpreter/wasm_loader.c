@@ -4963,12 +4963,7 @@ fail:
 
 #if WASM_ENABLE_FAST_INTERP != 0
 
-#define HANDLE_OPCODE(opcode) #opcode
-DEFINE_GOTO_TABLE(const char *, opcode_names);
 #if WASM_DEBUG_PREPROCESSOR != 0
-#define HANDLE_OPCODE(opcode) #opcode
-DEFINE_GOTO_TABLE(const char *, opcode_names);
-#undef HANDLE_OPCODE
 #define LOG_OP(...) fprintf(stderr, __VA_ARGS__)
 #else
 #define LOG_OP(...) (void)0
@@ -5002,8 +4997,6 @@ typedef struct BranchBlock {
      * opcode can know how many parameters should be copied to the stack */
     uint32 available_param_num;
 #endif
-    Stack  metadata_addr_stack;
-    Stack  metadata_type_stack;
 
     /* Indicate the operand stack is in polymorphic state.
      * If the opcode is one of unreachable/br/br_table/return, stack is marked
