@@ -22,7 +22,6 @@ bool get_restore_flag()
     return restore_flag;
 }
 
-
 static inline WASMInterpFrame *
 wasm_alloc_frame(WASMExecEnv *exec_env, uint32 size, WASMInterpFrame *prev_frame)
 {
@@ -42,7 +41,7 @@ wasm_alloc_frame(WASMExecEnv *exec_env, uint32 size, WASMInterpFrame *prev_frame
     return frame;
 }
 
-
+#if WASM_ENABLE_FAST_INTERP == 0
 static void
 _restore_program_counter(WASMInterpFrame *frame, CallStackEntry *entry)
 {
@@ -241,7 +240,7 @@ _restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, WASM
     wasmig_debug("restore frame\n");
 }
 
-WASMInterpFrame*
+void
 wasm_restore_stack(WASMExecEnv **_exec_env)
 {
     wasmig_info("wasm_restore_stack\n");
@@ -265,7 +264,6 @@ wasm_restore_stack(WASMExecEnv **_exec_env)
     _exec_env = &exec_env;
     
     wasmig_info("Finish to restore stack\n");
-    return wasm_exec_env_get_cur_frame(exec_env);
 }
 
 void restore_dirty_memory(WASMMemoryInstance **memory, FILE* memory_fp) {
@@ -387,3 +385,4 @@ int wasm_restore(WASMModuleInstance **module,
 
     return 0;
 }
+#endif // end of WASM_ENABLE_FAST_INTERP != 0  

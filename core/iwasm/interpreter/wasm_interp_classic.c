@@ -1282,7 +1282,8 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
 
         // NOTE: Can the wasm_restore_stack() include in wasm_restore()?
         clock_gettime(CLOCK_MONOTONIC, &ts1);
-        frame = wasm_restore_stack(&exec_env);
+        wasm_restore_stack(&exec_env);
+        frame = wasm_exec_env_get_cur_frame(exec_env);
         clock_gettime(CLOCK_MONOTONIC, &ts2);
         fprintf(stderr, "stack, %lu\n", get_time(ts1, ts2));
         if (frame == NULL) {

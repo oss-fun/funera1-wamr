@@ -251,7 +251,7 @@
 
 /* Enable fast interpreter or not */
 #ifndef WASM_ENABLE_FAST_INTERP
-#define WASM_ENABLE_FAST_INTERP 0
+#define WASM_ENABLE_FAST_INTERP 1
 #endif
 
 #if WASM_ENABLE_FAST_INTERP != 0
