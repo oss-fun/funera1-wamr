@@ -197,7 +197,6 @@ _create_frame(WASMExecEnv *exec_env, WASMModuleInstance *module_inst,
     memset(frame->lp + cur_func->param_cell_num, 0,
            (uint32)(cur_func->local_cell_num * 4));
     
-    printf("Allocated frame for function index: %d, frame address: %p\n", pc.fidx, frame);
     return frame;
 }
 
