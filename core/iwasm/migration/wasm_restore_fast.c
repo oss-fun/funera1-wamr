@@ -125,12 +125,21 @@ Array32 merge_locals_and_value_stack(TypedArray locals, TypedArray value_stack) 
     return (Array32){total_size, merged_contents};
 }
 
-static void
+static bool
 _restore_value_stacks(WASMInterpFrame *frame, WASMFunctionInstance *func, CallStackEntry *entry, CodePos pc, bool is_stack_top)
 {
+#if WASM_ENABLE_MIGRATION_STACK_MAP == 0
+    (void)frame;
+    (void)func;
+    (void)entry;
+    (void)pc;
+    (void)is_stack_top;
+    wasmig_error("migration stack map is disabled\n");
+    return false;
+#else
     Stack addr_stack, type_stack;
     uint32 fidx = pc.fidx;
-    uint32 offset = is_stack_top ? pc.offset : pc.offset + 1;
+    uint32 offset = pc.offset;
 
     if (!load_metadata_stacks(fidx, offset, &addr_stack, &type_stack)) {
         wasmig_error("failed to load metadata stacks\n");
@@ -143,8 +152,9 @@ _restore_value_stacks(WASMInterpFrame *frame, WASMFunctionInstance *func, CallSt
         wasmig_error("failed to rematerialize stack values\n");
         return false;
     }
-    
+
     return true;
+#endif
 }
 
 static void
