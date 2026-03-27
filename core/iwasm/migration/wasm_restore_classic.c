@@ -69,9 +69,6 @@ _restore_value_stacks(WASMInterpFrame *frame, WASMFunctionInstance *func, CallSt
     wasmig_debug("restore sp");
 
     // restore locals
-    uint32 local_cell_num = func->param_cell_num + func->local_cell_num;
-    printf("local_cell_num: %d\n", local_cell_num);
-    printf("locals.values.size: %d\n", entry->locals.values.size);
     memcpy(frame->lp, entry->locals.values.contents, entry->locals.values.size * sizeof(uint32_t));
 
     // restore value stack
@@ -87,9 +84,6 @@ _restore_label_stack_v1(WASMInterpFrame *frame, WASMCSPFrame *csp_frame)
     uint32 ctrl_stack_size = entry->label_stack.size;
     if (ctrl_stack_size != csp_frame->csp_size) {
         wasmig_error("control stack size mismatch: (expect=%d, actual=%d)",
-                     ctrl_stack_size, csp_frame->csp_size);
-    } else {
-        wasmig_info("control stack size match: (expect=%d, actual=%d)",
                      ctrl_stack_size, csp_frame->csp_size);
     }
     frame->csp = frame->csp_bottom + ctrl_stack_size;
@@ -114,9 +108,6 @@ _restore_label_stack_v1(WASMInterpFrame *frame, WASMCSPFrame *csp_frame)
         if (csp->target_addr != csp_entry->target_addr) {
             wasmig_error("control stack target_addr mismatch: (actual=%p, expect=%p)",
                          csp_entry->target_addr, csp->target_addr);
-        } else {
-            wasmig_info("control stack target_addr match: (actual=%p, expect=%p)",
-                         csp_entry->target_addr, csp->target_addr);
         }
 
         // frame_sp の復元
@@ -124,9 +115,6 @@ _restore_label_stack_v1(WASMInterpFrame *frame, WASMCSPFrame *csp_frame)
         csp->frame_sp = set_addr_offset(frame->sp_bottom, offset);
         if (offset != csp_entry->sp_offset) {
             wasmig_error("control stack sp_offset mismatch: (actual=%d, expect=%d)",
-                         csp_entry->sp_offset, offset);
-        } else {
-            wasmig_info("control stack sp_offset match: (actual=%d, expect=%d)",
                          csp_entry->sp_offset, offset);
         }
 
@@ -136,13 +124,8 @@ _restore_label_stack_v1(WASMInterpFrame *frame, WASMCSPFrame *csp_frame)
         if (csp->cell_num != csp_entry->cell_num) {
             wasmig_error("control stack cell_num mismatch: (actual=%d, expect=%d)",
                          csp_entry->cell_num, csp->cell_num);
-        } else {
-            wasmig_info("control stack cell_num match: (actual=%d, expect=%d)",
-                         csp_entry->cell_num, csp->cell_num);
         }
     }
-    wasmig_info("Correct restore label stack");
-    wasmig_info("restore label stack");
 }
 
 // restore label stack without dumped state
@@ -171,7 +154,6 @@ _restore_label_stack_v2(WASMInterpFrame *frame, WASMCSPFrame *csp_frame)
         // cell_num の復元
         csp->cell_num = csp_entry->cell_num;
     }
-    wasmig_info("restore label stack");
 }
 
 static void
@@ -243,8 +225,6 @@ _restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, WASM
 void
 wasm_restore_stack(WASMExecEnv **_exec_env)
 {
-    wasmig_info("wasm_restore_stack\n");
-    
     WASMExecEnv *exec_env = *_exec_env;
     WASMModuleInstance *module_inst = (WASMModuleInstance *)exec_env->module_inst;
     
@@ -263,7 +243,6 @@ wasm_restore_stack(WASMExecEnv **_exec_env)
     
     _exec_env = &exec_env;
     
-    wasmig_info("Finish to restore stack\n");
 }
 
 void restore_dirty_memory(WASMMemoryInstance **memory, FILE* memory_fp) {
@@ -367,21 +346,18 @@ int wasm_restore(WASMModuleInstance **module,
     wasm_restore_memory(*module, memory, maddr);
     clock_gettime(CLOCK_MONOTONIC, &ts2);
     fprintf(stderr, "memory, %lu\n", get_time(ts1, ts2));
-    // printf("Success to restore linear memory\n");
 
     // restore globals
     clock_gettime(CLOCK_MONOTONIC, &ts1);
     wasm_restore_global(*module, *globals, global_data, global_addr);
     clock_gettime(CLOCK_MONOTONIC, &ts2);
     fprintf(stderr, "global, %lu\n", get_time(ts1, ts2));
-    // printf("Success to restore globals\n");
 
     // restore program counter
     clock_gettime(CLOCK_MONOTONIC, &ts1);
     wasm_restore_program_counter(*module, frame_ip);
     clock_gettime(CLOCK_MONOTONIC, &ts2);
     fprintf(stderr, "program counter, %lu\n", get_time(ts1, ts2));
-    // printf("Success to program counter\n");
 
     return 0;
 }
