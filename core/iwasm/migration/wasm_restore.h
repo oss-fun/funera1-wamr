@@ -7,7 +7,7 @@
 void set_restore_flag(bool f);
 bool get_restore_flag();
 
-WASMInterpFrame*
+void
 wasm_restore_stack(WASMExecEnv **exec_env);
 
 static inline void

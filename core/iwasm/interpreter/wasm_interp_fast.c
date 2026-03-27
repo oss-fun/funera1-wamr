@@ -9,6 +9,8 @@
 #include "wasm_opcode.h"
 #include "wasm_loader.h"
 #include "wasm_memory.h"
+#include <wasmig/table_v3.h>
+#include <wasmig/registry.h>
 #include "../common/wasm_exec_env.h"
 #if WASM_ENABLE_SHARED_MEMORY != 0
 #include "../common/wasm_shared_memory.h"
@@ -1114,9 +1116,39 @@ wasm_interp_dump_op_count()
 #else
 #define HANDLE_OP(opcode) HANDLE_##opcode:
 #endif
+
+#define DO_CHECKPOINT()                                                     \
+    do {                                                                    \
+        SYNC_ALL_TO_FRAME();                                                \
+        uint8 *dummy_ip;                                                    \
+        uint32 *dummy_sp;                                                   \
+        dummy_ip = frame_ip;                                                \
+        dummy_sp = frame_lp;                                                \
+        int rc = wasm_dump(exec_env, module, memory,                        \
+            globals, global_data, cur_func,                                 \
+            frame, dummy_ip);                                               \
+        if (rc < 0) {                                                       \
+            perror("failed to dump\n");                                     \
+            exit(1);                                                        \
+        }                                                                   \
+        LOG_DEBUG("dispatch_count: %d\n", dispatch_count);                  \
+        exit(0);                                                            \
+    } while(0)                                                              
+
+// #define HANDLE_OPCODE(opcode) #opcode
+// DEFINE_GOTO_TABLE(const char *, opcode_names);
+// #undef HANDLE_OPCODE
+
+    // if (sig_flag && !wasmig_forbidden_list_contains(foblist, frame_ip)) {   
+#define CHECK_DUMP()                                                        \
+    if (__glibc_unlikely(sig_flag && !wasmig_forbidden_list_contains(foblist, frame_ip))) {                                       \
+        DO_CHECKPOINT();                                                    \
+    }
+
 #if WASM_CPU_SUPPORTS_UNALIGNED_ADDR_ACCESS != 0
 #define FETCH_OPCODE_AND_DISPATCH()                    \
     do {                                               \
+        CHECK_DUMP();                                  \
         const void *p_label_addr = *(void **)frame_ip; \
         frame_ip += sizeof(void *);                    \
         goto *p_label_addr;                            \
@@ -1168,6 +1200,13 @@ get_global_addr(uint8 *global_data, WASMGlobalInstance *global)
                      + global->import_global_inst->data_offset
                : global_data + global->data_offset;
 #endif
+}
+
+static bool sig_flag = false;
+void
+wasm_interp_sigint(int signum)
+{
+    sig_flag = true;
 }
 
 static void
@@ -1230,6 +1269,77 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
         return;
     }
 #endif
+    CheckpointForbiddenList foblist = wasmig_forbidden_list_load();
+
+    // register signal handler for C/R
+    printf("register signal handler for C/R at fast interpreter\n");
+    signal(SIGINT, &wasm_interp_sigint);
+
+    // リストアの初期化時間の計測(終了)
+    struct timespec ts1;
+    clock_gettime(CLOCK_MONOTONIC, &ts1);
+    fprintf(stderr, "boot_end, %lu\n", (uint64_t)(ts1.tv_sec*1e9) + ts1.tv_nsec);
+
+    // debug
+    if (get_restore_flag()) {
+        // bool done_flag;
+        int rc;
+        struct timespec ts1, ts2;
+
+        // NOTE: Can the wasm_restore_stack() include in wasm_restore()?
+        clock_gettime(CLOCK_MONOTONIC, &ts1);
+        wasm_restore_stack(&exec_env);
+        frame = wasm_exec_env_get_cur_frame(exec_env);
+        clock_gettime(CLOCK_MONOTONIC, &ts2);
+        fprintf(stderr, "stack, %lu\n", get_time(ts1, ts2));
+        if (frame == NULL) {
+            perror("Error:wasm_interp_func_bytecode:frame is NULL\n");
+            return;
+        }
+        // debug_wasm_interp_frame(frame, module->e->functions);
+
+        cur_func = frame->function;
+        if (frame->function == NULL) {
+            perror("Error:wasm_interp_func_bytecode:cur_func is null\n");
+            return;
+        }
+
+        prev_frame = frame->prev_frame;
+        if (prev_frame == NULL) {
+            perror("Error:wasm_interp_func_bytecode:prev_frame is null\n");
+            return;
+        }
+
+        uint8 *dummy_ip, *dummy_lp, *dummy_sp;
+        rc = wasm_restore(&module, &exec_env, &cur_func, &prev_frame,
+                        &memory, &globals, &global_data, &global_addr,
+                        &frame, &dummy_ip, &dummy_lp, &dummy_sp, NULL,
+                        &frame_ip_end, NULL, NULL, &maddr, NULL);
+        if (rc < 0) {
+            // error
+            perror("failed to restore\n");
+            return;
+        }
+        cur_func = frame->function;
+        prev_frame = frame->prev_frame;
+        frame_ip = frame->ip;
+        frame_lp = frame->lp;
+        linear_mem_size = memory ? memory->memory_data_size : 0;
+
+        UPDATE_ALL_FROM_FRAME();
+
+        // checkpoint after restoring the Wasm state for debugging
+        char* is_checkpoint_after_restore = getenv("CHECKPOINT_AFTER_RESTORE"); 
+        if (is_checkpoint_after_restore && (strcmp(is_checkpoint_after_restore, "1") == 0)) {
+            sig_flag = 1;
+        }
+
+        clock_gettime(CLOCK_MONOTONIC, &ts1);
+        fprintf(stderr, "restore_end, %lu\n", (uint64_t)(ts1.tv_sec*1e9) + ts1.tv_nsec);
+
+        printf("Resume code\n");
+        FETCH_OPCODE_AND_DISPATCH();
+    }
 
 #if WASM_ENABLE_LABELS_AS_VALUES == 0
     while (frame_ip < frame_ip_end) {
@@ -3716,7 +3826,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
         HANDLE_OP(WASM_OP_BLOCK)
         HANDLE_OP(WASM_OP_LOOP)
         HANDLE_OP(WASM_OP_END)
-        HANDLE_OP(WASM_OP_NOP)
+        // HANDLE_OP(WASM_OP_NOP)
         HANDLE_OP(EXT_OP_BLOCK)
         HANDLE_OP(EXT_OP_LOOP)
         HANDLE_OP(EXT_OP_IF)
@@ -3725,7 +3835,15 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
             wasm_set_exception(module, "unsupported opcode");
             goto got_exception;
         }
+        
 #endif
+        HANDLE_OP(WASM_OP_NOP)
+        {
+            char* env = getenv("NOP_CKPT"); 
+            if (env && (strcmp(env, "1") == 0)) sig_flag = 1;
+            HANDLE_OP_END(); 
+        }
+
 
 #if WASM_ENABLE_LABELS_AS_VALUES == 0
         continue;

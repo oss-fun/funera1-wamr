@@ -203,6 +203,7 @@ debug_local(WASMInterpFrame *frame)
 }
 
 
+#if WASM_ENABLE_FAST_INTERP == 0
 static void
 debug_label_stack(WASMInterpFrame *frame)
 {
@@ -240,6 +241,7 @@ debug_label_stack(WASMInterpFrame *frame)
     }
     fprintf(stderr, "]\n");
 }
+#endif
 
 static WASMCSPFrameStack* WASMCallStack;
 WASMCSPFrameStack* load_wasm_call_stack() {
