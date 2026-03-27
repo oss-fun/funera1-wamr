@@ -7338,7 +7338,11 @@ wasm_loader_prepare_bytecode(WASMModule *module, WASMFunction *func,
     loader_ctx->is_rescaned = false;
     loader_ctx->disable_apply_stack = false;
     loader_ctx->checkpoint_forbidden_list = wasmig_forbidden_list_exists() ? wasmig_forbidden_list_load() : wasmig_forbidden_list_create(0);
-    AddressMap metadata_address_map = (!wasmig_address_map_exists() ? wasmig_address_map_create(0) : wasmig_address_map_load());
+#if WASM_ENABLE_FAST_INTERP != 0
+    AddressMap metadata_address_map = (!wasmig_address_map_exists()
+                                           ? wasmig_address_map_create(0)
+                                           : wasmig_address_map_load());
+#endif
     Stack metadata_call_site_type_stack, metadata_call_site_address_stack;
     
     //  push local to metadata stack 
@@ -10351,8 +10355,6 @@ re_scan:
             } else {
                 wasmig_address_map_set_forward(metadata_address_map, fidx, offset, loader_ctx->p_code_compiled);
             }
-#else
-            wasmig_address_map_set_bidirect(metadata_address_map, fidx, offset, p);
 #endif
 
             // Map metadata stack only for caller-resume points.
@@ -10389,7 +10391,9 @@ capture_done:
 
     // save metadata
     if (!g_capture_metadata_enabled) {
+#if WASM_ENABLE_FAST_INTERP != 0
         wasmig_address_map_save(metadata_address_map);
+#endif
         if (!loader_ctx->is_rescaned) {
             wasmig_stack_state_map_registry_save(fidx, loader_ctx->metadata_stack_map);
             wasmig_forbidden_list_save(loader_ctx->checkpoint_forbidden_list);

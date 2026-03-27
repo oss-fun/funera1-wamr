@@ -200,7 +200,10 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
     WASMModuleInstance *module = exec_env->module_inst;
 
     // プログラムカウンタの処理
-    CodePos call_pos = get_call_position(frame->ip);
+    CodePos call_pos = {
+        (uint32)(frame->function - module->e->functions),
+        (uint32)(frame->ip - wasm_get_func_code(frame->function))
+    };
     // wasmig_debug("call_stack_id: %d, fidx: %d, offset: %d\n", call_stack_id, call_pos.fidx, call_pos.offset);
 
     // 値スタックの設定
@@ -289,7 +292,10 @@ int wasm_dump_program_counter(
     uint8 *frame_ip
 )
 {
-    CodePos pc = get_call_position(frame_ip);
+    CodePos pc = {
+        (uint32)(func - module->e->functions),
+        (uint32)(frame_ip - wasm_get_func_code(func))
+    };
     return wasmig_checkpoint_pc(pc.fidx, pc.offset);
 }
 
