@@ -9,6 +9,7 @@
 #include <wasmig/state.h>
 
 #include "../interpreter/wasm_runtime.h"
+#include "../interpreter/wasm_loader.h"
 #include "wasm_migration.h"
 #include "wasm_dump.h"
 #include "wasm_dispatch.h"
@@ -26,14 +27,21 @@
 
 #if WASM_ENABLE_FAST_INTERP == 0
 bool load_metadata_stacks(uint32 fidx, uint32 offset, Stack* addr_stack, Stack* type_stack) {
+#if WASM_ENABLE_MIGRATION_STACK_MAP == 0
+    (void)fidx;
+    (void)offset;
+    (void)addr_stack;
+    (void)type_stack;
+    return false;
+#else
     StackStateMap m = wasmig_stack_state_map_registry_load(fidx);
     if (!wasmig_stack_state_load_pair(m, offset, addr_stack, type_stack)) {
-        wasmig_error("failed to load metadata stack\n");
         return false;
     }
     // wasmig_stack_print(*addr_stack);
     // wasmig_stack_print(*type_stack);
     return true;
+#endif
 }
 
 bool materialize_stack_values(Stack addr_stack, Stack type_stack,
@@ -108,17 +116,21 @@ bool count_stack_entries(Stack type_stack, uint32* stack_count, uint32* stack_si
 }
 
 static bool
-_setup_value_stacks(struct WASMInterpFrame *frame, CodePos call_pos, bool is_stack_top,
-                   TypedArray *out_locals, TypedArray *out_value_stack)
+_setup_value_stacks(WASMExecEnv *exec_env, struct WASMInterpFrame *frame,
+                    CodePos call_pos, bool is_stack_top,
+                    TypedArray *out_locals, TypedArray *out_value_stack)
 {
     // wasmig_info("fidx: %d, offset: %d\n", call_pos.fidx, call_pos.offset);
-    if (!is_stack_top) 
-        call_pos.offset += 1;
-
     WASMFunctionInstance *func = frame->function;
     Stack addr_stack, type_stack;
-    if (!load_metadata_stacks(call_pos.fidx, call_pos.offset, &addr_stack, &type_stack))
-        return false;
+    if (!load_metadata_stacks(call_pos.fidx, call_pos.offset, &addr_stack, &type_stack)) {
+        if (!is_stack_top
+            || !wasm_loader_rebuild_metadata_stacks(exec_env->module_inst, func,
+                                                    call_pos.offset, &addr_stack,
+                                                    &type_stack)) {
+            return false;
+        }
+    }
 
     uint32 stack_size, stack_count;
     if (!count_stack_entries(type_stack, &stack_count, &stack_size)) {
@@ -187,17 +199,25 @@ _setup_label_stack(struct WASMInterpFrame *frame)
     return labels;
 }
 
-_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_stack_id, CallStackEntry *entry, bool is_stack_top)
+static bool
+_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame,
+            uint32 call_stack_id, CallStackEntry *entry, bool is_stack_top)
 {
     WASMModuleInstance *module = exec_env->module_inst;
 
     // プログラムカウンタの処理
-    CodePos call_pos = get_call_position(frame->ip);
+    CodePos call_pos = {
+        (uint32)(frame->function - module->e->functions),
+        (uint32)(frame->ip - wasm_get_func_code(frame->function))
+    };
     // wasmig_debug("call_stack_id: %d, fidx: %d, offset: %d\n", call_stack_id, call_pos.fidx, call_pos.offset);
 
     // 値スタックの設定
     TypedArray locals, value_stack;
-    _setup_value_stacks(frame, call_pos, is_stack_top, &locals, &value_stack);
+    if (!_setup_value_stacks(exec_env, frame, call_pos, is_stack_top, &locals,
+                             &value_stack)) {
+        return false;
+    }
 
     // ラベルスタックの設定
     // LabelStack labels = _setup_label_stack(frame);
@@ -207,6 +227,7 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
     entry->locals = locals;
     entry->value_stack = value_stack;
     entry->label_stack = (LabelStack){0, NULL, NULL, NULL, NULL};
+    return true;
 }
 
 
@@ -228,7 +249,10 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
     cur_frame = frame;
     for (int i = 0; i < call_stack_size; i++) {
         // dump_stackは上から順に呼ばれるので、entryは下から順に格納する
-        _dump_stack(exec_env, cur_frame, i, &entries[call_stack_size-i-1], (i == 0));
+        if (!_dump_stack(exec_env, cur_frame, i, &entries[call_stack_size-i-1],
+                         (i == 0))) {
+            return -1;
+        }
         cur_frame = cur_frame->prev_frame;
     };
 
@@ -280,7 +304,10 @@ int wasm_dump_program_counter(
     uint8 *frame_ip
 )
 {
-    CodePos pc = get_call_position(frame_ip);
+    CodePos pc = {
+        (uint32)(func - module->e->functions),
+        (uint32)(frame_ip - wasm_get_func_code(func))
+    };
     return wasmig_checkpoint_pc(pc.fidx, pc.offset);
 }
 

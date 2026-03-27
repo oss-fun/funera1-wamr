@@ -5242,6 +5242,70 @@ check_stack_pop(WASMLoaderContext *ctx, uint8 type, char *error_buf,
     return true;
 }
 
+static bool g_capture_metadata_enabled = false;
+static uint32 g_capture_metadata_target_offset = 0;
+static Stack *g_capture_metadata_addr_out = NULL;
+static Stack *g_capture_metadata_type_out = NULL;
+static bool g_capture_metadata_found = false;
+
+static Stack
+clone_stack(Stack stack)
+{
+    size_t i, size = wasmig_stack_size(stack);
+    uint64_t *values = NULL;
+    Stack cloned = wasmig_stack_empty();
+    StackIterator it = wasmig_stack_iterator_create(stack);
+
+    if (!it)
+        return NULL;
+
+    if (size > 0) {
+        values = wasm_runtime_malloc((uint32)(sizeof(uint64_t) * size));
+        if (!values) {
+            wasmig_stack_iterator_destroy(it);
+            return NULL;
+        }
+    }
+
+    for (i = 0; i < size && wasmig_stack_iterator_has_next(it); i++) {
+        values[i] = wasmig_stack_iterator_next(it);
+    }
+
+    while (i > 0) {
+        i--;
+        cloned = wasmig_stack_push(cloned, values[i]);
+    }
+
+    if (values)
+        wasm_runtime_free(values);
+    wasmig_stack_iterator_destroy(it);
+    return cloned;
+}
+
+static bool
+capture_metadata_stacks(WASMLoaderContext *loader_ctx)
+{
+    Stack addr_stack, type_stack;
+
+    if (!g_capture_metadata_addr_out || !g_capture_metadata_type_out)
+        return false;
+
+    addr_stack = clone_stack(loader_ctx->metadata_address_stack);
+    type_stack = clone_stack(loader_ctx->metadata_type_stack);
+    if (!addr_stack || !type_stack) {
+        if (addr_stack)
+            wasmig_stack_destroy(addr_stack);
+        if (type_stack)
+            wasmig_stack_destroy(type_stack);
+        return false;
+    }
+
+    *g_capture_metadata_addr_out = addr_stack;
+    *g_capture_metadata_type_out = type_stack;
+    g_capture_metadata_found = true;
+    return true;
+}
+
 static void
 wasm_loader_ctx_destroy(WASMLoaderContext *ctx)
 {
@@ -5484,6 +5548,14 @@ fail:
 
 #if WASM_ENABLE_FAST_INTERP != 0
 
+#if WASM_ENABLE_MIGRATION_FORBIDDEN_LIST != 0
+#define ADD_FORBIDDEN_ENTRY()                                               \
+    wasmig_forbidden_list_add(loader_ctx->checkpoint_forbidden_list,        \
+                              loader_ctx->p_code_compiled)
+#else
+#define ADD_FORBIDDEN_ENTRY() ((void)0)
+#endif
+
 #if WASM_ENABLE_LABELS_AS_VALUES != 0
 #if WASM_CPU_SUPPORTS_UNALIGNED_ADDR_ACCESS != 0
 #define emit_label(opcode)                                      \
@@ -5492,7 +5564,7 @@ fail:
         if (!loader_ctx->is_emitted) {                          \
             loader_ctx->is_emitted = true;                      \
         } else {                                                \
-            wasmig_forbidden_list_add(loader_ctx->checkpoint_forbidden_list, loader_ctx->p_code_compiled); \
+            ADD_FORBIDDEN_ENTRY();                              \
         }                                                       \
         wasm_loader_emit_ptr(loader_ctx, handle_table[opcode]); \
         LOG_OP("\nemit_op [%d, %s], addr=%ld\t", opcode, opcode_names[opcode], loader_ctx->p_code_compiled);       \
@@ -7268,13 +7340,25 @@ wasm_loader_prepare_bytecode(WASMModule *module, WASMFunction *func,
         goto fail;
     }
     // Init metadata
+#if WASM_ENABLE_MIGRATION_STACK_MAP != 0
     loader_ctx->metadata_stack_map = wasmig_stack_state_map_create();
+#else
+    loader_ctx->metadata_stack_map = NULL;
+#endif
     loader_ctx->metadata_address_stack = wasmig_stack_create();
     loader_ctx->metadata_type_stack = wasmig_stack_create();
     loader_ctx->is_rescaned = false;
     loader_ctx->disable_apply_stack = false;
+#if WASM_ENABLE_MIGRATION_FORBIDDEN_LIST != 0
     loader_ctx->checkpoint_forbidden_list = wasmig_forbidden_list_exists() ? wasmig_forbidden_list_load() : wasmig_forbidden_list_create(0);
-    AddressMap metadata_address_map = (!wasmig_address_map_exists() ? wasmig_address_map_create(0) : wasmig_address_map_load());
+#else
+    loader_ctx->checkpoint_forbidden_list = NULL;
+#endif
+#if WASM_ENABLE_FAST_INTERP != 0
+    AddressMap metadata_address_map = (!wasmig_address_map_exists()
+                                           ? wasmig_address_map_create(0)
+                                           : wasmig_address_map_load());
+#endif
     Stack metadata_call_site_type_stack, metadata_call_site_address_stack;
     
     //  push local to metadata stack 
@@ -7328,7 +7412,9 @@ re_scan:
     // Add a head address to forbidden list to avoid setting a checkpoint at function entry
 #if WASM_ENABLE_FAST_INTERP != 0
     if (loader_ctx->is_rescaned) {
+#if WASM_ENABLE_MIGRATION_FORBIDDEN_LIST != 0
         wasmig_forbidden_list_add(loader_ctx->checkpoint_forbidden_list, loader_ctx->p_code_compiled);
+#endif
     }
 #endif
 
@@ -8489,6 +8575,17 @@ re_scan:
                 break;
             }
 
+            case EXT_OP_GET_LOCAL_FAST:
+            {
+                CHECK_BUF(p, p_end, 1);
+                local_offset = read_uint8(p);
+                local_type = (local_offset & 0x80) ? VALUE_TYPE_I64
+                                                   : VALUE_TYPE_I32;
+                local_offset &= 0x7F;
+                PUSH_TYPE(local_type);
+                break;
+            }
+
             case WASM_OP_SET_LOCAL:
             {
                 p_org = p - 1;
@@ -8563,6 +8660,17 @@ re_scan:
                 break;
             }
 
+            case EXT_OP_SET_LOCAL_FAST:
+            {
+                CHECK_BUF(p, p_end, 1);
+                local_offset = read_uint8(p);
+                local_type = (local_offset & 0x80) ? VALUE_TYPE_I64
+                                                   : VALUE_TYPE_I32;
+                local_offset &= 0x7F;
+                POP_TYPE(local_type);
+                break;
+            }
+
             case WASM_OP_TEE_LOCAL:
             {
                 p_org = p - 1;
@@ -8620,6 +8728,25 @@ re_scan:
                 }
 #endif
 #endif /* end of WASM_ENABLE_FAST_INTERP != 0 */
+                break;
+            }
+
+            case EXT_OP_TEE_LOCAL_FAST:
+            {
+                CHECK_BUF(p, p_end, 1);
+                local_offset = read_uint8(p);
+                local_type = (local_offset & 0x80) ? VALUE_TYPE_I64
+                                                   : VALUE_TYPE_I32;
+                local_offset &= 0x7F;
+#if WASM_ENABLE_FAST_INTERP != 0
+                BranchBlock *cur_block = loader_ctx->frame_csp - 1;
+                if (cur_block->is_stack_polymorphic) {
+                    POP_OFFSET_TYPE(local_type);
+                    PUSH_OFFSET_TYPE(local_type);
+                }
+#endif
+                POP_TYPE(local_type);
+                PUSH_TYPE(local_type);
                 break;
             }
 
@@ -10270,24 +10397,37 @@ re_scan:
         }
         
         // construct metadatas
+        if (!g_capture_metadata_enabled) {
 #if WASM_ENABLE_FAST_INTERP != 0
-        if (loader_ctx->is_emitted) {
-            wasmig_address_map_set_bidirect(metadata_address_map, fidx, offset, loader_ctx->p_code_compiled);
-        } else {
-            wasmig_address_map_set_forward(metadata_address_map, fidx, offset, loader_ctx->p_code_compiled);
-        }
-#else
-        wasmig_address_map_set_bidirect(metadata_address_map, fidx, offset, p);
-#endif
-        
-        // Map a metadata stack during call at next generated bytecode offset
-        if (!loader_ctx->is_rescaned) {
-            if (opcode == WASM_OP_CALL || opcode == WASM_OP_CALL_INDIRECT) {
-                wasmig_stack_state_save_pair(loader_ctx->metadata_stack_map, offset+1, 
-                    metadata_call_site_address_stack, metadata_call_site_type_stack);
+            if (loader_ctx->is_emitted) {
+                wasmig_address_map_set_bidirect(metadata_address_map, fidx, offset, loader_ctx->p_code_compiled);
+            } else {
+                wasmig_address_map_set_forward(metadata_address_map, fidx, offset, loader_ctx->p_code_compiled);
             }
-            wasmig_stack_state_save_pair(loader_ctx->metadata_stack_map, offset, 
-                loader_ctx->metadata_address_stack, loader_ctx->metadata_type_stack);
+#endif
+
+            // Map metadata stack only for caller-resume points.
+            if (!loader_ctx->is_rescaned) {
+                if (opcode == WASM_OP_CALL || opcode == WASM_OP_CALL_INDIRECT) {
+                    uint32 next_offset = (uint32)(p - func->code);
+#if WASM_ENABLE_MIGRATION_STACK_MAP != 0
+                    wasmig_stack_state_save_pair(loader_ctx->metadata_stack_map,
+                                                 next_offset,
+                                                 metadata_call_site_address_stack,
+                                                 metadata_call_site_type_stack);
+#endif
+                }
+            }
+        }
+
+        if (g_capture_metadata_enabled && !loader_ctx->is_rescaned
+            && (uint32)(p - func->code) == g_capture_metadata_target_offset) {
+            if (!capture_metadata_stacks(loader_ctx)) {
+                set_error_buf(error_buf, error_buf_size,
+                              "failed to capture metadata stacks");
+                goto fail;
+            }
+            goto capture_done;
         }
 
         // update seen_stack_height
@@ -10306,15 +10446,27 @@ re_scan:
         // }
 #endif
     }
-    
+
+capture_done:
+    if (g_capture_metadata_enabled) {
+        return_value = g_capture_metadata_found;
+        goto fail;
+    }
+
     // for debug
     // wasmig_address_map_print(metadata_address_map);
 
     // save metadata
+#if WASM_ENABLE_FAST_INTERP != 0
     wasmig_address_map_save(metadata_address_map);
+#endif
     if (!loader_ctx->is_rescaned) {
+#if WASM_ENABLE_MIGRATION_STACK_MAP != 0
         wasmig_stack_state_map_registry_save(fidx, loader_ctx->metadata_stack_map);
+#endif
+#if WASM_ENABLE_MIGRATION_FORBIDDEN_LIST != 0
         wasmig_forbidden_list_save(loader_ctx->checkpoint_forbidden_list);
+#endif
     }
     if (func->is_restore_frame) {
         func->frame->csp_size = csp_height;
@@ -10385,4 +10537,52 @@ fail:
     (void)mem_offset;
     (void)align;
     return return_value;
+}
+
+bool
+wasm_loader_rebuild_metadata_stacks(WASMModuleInstance *module_inst,
+                                    WASMFunctionInstance *func_inst,
+                                    uint32 offset, Stack *addr_stack,
+                                    Stack *type_stack)
+{
+    WASMModule *module;
+    WASMFunction *func;
+    uint32 fidx, cur_func_idx;
+    char error_buf[128] = { 0 };
+    bool ret;
+
+    if (!module_inst || !func_inst || !addr_stack || !type_stack)
+        return false;
+
+    module = module_inst->module;
+    if (!module)
+        return false;
+
+    fidx = (uint32)(func_inst - module_inst->e->functions);
+    if (fidx < module->import_function_count)
+        return false;
+
+    cur_func_idx = fidx - module->import_function_count;
+    if (cur_func_idx >= module->function_count)
+        return false;
+
+    func = module->functions[cur_func_idx];
+    *addr_stack = NULL;
+    *type_stack = NULL;
+
+    g_capture_metadata_enabled = true;
+    g_capture_metadata_target_offset = offset;
+    g_capture_metadata_addr_out = addr_stack;
+    g_capture_metadata_type_out = type_stack;
+    g_capture_metadata_found = false;
+
+    ret = wasm_loader_prepare_bytecode(module, func, cur_func_idx, error_buf,
+                                       sizeof(error_buf));
+
+    g_capture_metadata_enabled = false;
+    g_capture_metadata_target_offset = 0;
+    g_capture_metadata_addr_out = NULL;
+    g_capture_metadata_type_out = NULL;
+
+    return ret && g_capture_metadata_found;
 }

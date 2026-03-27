@@ -46,7 +46,7 @@ static void
 _restore_program_counter(WASMInterpFrame *frame, CallStackEntry *entry)
 {
     CodePos ret_pos = entry->pc;
-    frame->ip = get_call_address(ret_pos.fidx, ret_pos.offset);
+    frame->ip = wasm_get_func_code(frame->function) + ret_pos.offset;
     wasmig_debug("restore ip: (%d, %d)\n", entry->pc.fidx, entry->pc.offset);
 }
 
@@ -316,7 +316,7 @@ int wasm_restore_program_counter(
     uint8 **frame_ip)
 {
     CodePos pc = wasmig_restore_pc();
-    *frame_ip = get_call_address(pc.fidx, pc.offset);
+    *frame_ip = wasm_get_func_code(module->e->functions + pc.fidx) + pc.offset;
 
     return 0;
 }

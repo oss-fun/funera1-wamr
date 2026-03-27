@@ -1,0 +1,4 @@
+# Hashes of file build rules.
+ea3b772d977be49bda75601b1671cca1 ../build/_deps/wasmig-src/proto/include/proto/state.pb-c.c
+469d298b6452d8366d7ac406883483bc build/_deps/wasmig-src/third_party/protobuf-c/build-cmake/CMakeFiles/protoc-generated-files
+8045febd334f599d7cb0a9e3d44a4f78 build/_deps/wasmig-src/wcrn/CMakeFiles/wcrn_build

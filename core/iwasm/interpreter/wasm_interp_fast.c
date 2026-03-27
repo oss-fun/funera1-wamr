@@ -1139,11 +1139,20 @@ wasm_interp_dump_op_count()
 // DEFINE_GOTO_TABLE(const char *, opcode_names);
 // #undef HANDLE_OPCODE
 
-    // if (sig_flag && !wasmig_forbidden_list_contains(foblist, frame_ip)) {   
+#if WASM_ENABLE_MIGRATION_FORBIDDEN_LIST != 0
+    // if (sig_flag && !wasmig_forbidden_list_contains(foblist, frame_ip)) {
 #define CHECK_DUMP()                                                        \
-    if (__glibc_unlikely(sig_flag && !wasmig_forbidden_list_contains(foblist, frame_ip))) {                                       \
+    if (__glibc_unlikely(sig_flag                                           \
+                         && !wasmig_forbidden_list_contains(foblist,        \
+                                                            frame_ip))) {   \
         DO_CHECKPOINT();                                                    \
     }
+#else
+#define CHECK_DUMP()                                                        \
+    if (__glibc_unlikely(sig_flag)) {                                       \
+        DO_CHECKPOINT();                                                    \
+    }
+#endif
 
 #if WASM_CPU_SUPPORTS_UNALIGNED_ADDR_ACCESS != 0
 #define FETCH_OPCODE_AND_DISPATCH()                    \
@@ -1269,7 +1278,9 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
         return;
     }
 #endif
+#if WASM_ENABLE_MIGRATION_FORBIDDEN_LIST != 0
     CheckpointForbiddenList foblist = wasmig_forbidden_list_load();
+#endif
 
     // register signal handler for C/R
     printf("register signal handler for C/R at fast interpreter\n");
