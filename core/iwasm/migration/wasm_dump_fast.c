@@ -9,6 +9,7 @@
 #include <wasmig/state.h>
 
 #include "../interpreter/wasm_runtime.h"
+#include "../interpreter/wasm_loader.h"
 #include "wasm_migration.h"
 #include "wasm_dump.h"
 #include "wasm_dispatch.h"
@@ -108,16 +109,23 @@ bool count_stack_entries(Stack type_stack, uint32* stack_count, uint32* stack_si
 }
 
 static bool
-_setup_value_stacks(struct WASMInterpFrame *frame, CodePos call_pos, bool is_stack_top,
-                   TypedArray *out_locals, TypedArray *out_value_stack)
+_setup_value_stacks(WASMExecEnv *exec_env, struct WASMInterpFrame *frame,
+                    CodePos call_pos, bool is_stack_top,
+                    TypedArray *out_locals, TypedArray *out_value_stack)
 {
     if (!is_stack_top) 
         call_pos.offset += 1;
 
     WASMFunctionInstance *func = frame->function;
     Stack addr_stack, type_stack;
-    if (!load_metadata_stacks(call_pos.fidx, call_pos.offset, &addr_stack, &type_stack))
-        return false;
+    if (!load_metadata_stacks(call_pos.fidx, call_pos.offset, &addr_stack, &type_stack)) {
+        if (!is_stack_top
+            || !wasm_loader_rebuild_metadata_stacks(exec_env->module_inst, func,
+                                                    call_pos.offset, &addr_stack,
+                                                    &type_stack)) {
+            return false;
+        }
+    }
 
     uint32 stack_size, stack_count;
     if (!count_stack_entries(type_stack, &stack_count, &stack_size)) {
@@ -169,7 +177,8 @@ _dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame, uint32 call_st
 
     // 値スタックの設定
     TypedArray locals, value_stack;
-    _setup_value_stacks(frame, call_pos, is_stack_top, &locals, &value_stack);
+    _setup_value_stacks(exec_env, frame, call_pos, is_stack_top, &locals,
+                        &value_stack);
 
     // エントリに情報を設定
     entry->pc = call_pos;

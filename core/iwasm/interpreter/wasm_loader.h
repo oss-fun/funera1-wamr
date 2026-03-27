@@ -8,10 +8,14 @@
 #include "wasm.h"
 #include "bh_hashmap.h"
 #include "../common/wasm_runtime_common.h"
+#include <wasmig/stack.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct WASMModuleInstance WASMModuleInstance;
+typedef struct WASMFunctionInstance WASMFunctionInstance;
 
 /**
  * Load a WASM module from a specified byte buffer.
@@ -72,6 +76,12 @@ wasm_loader_find_block_addr(WASMExecEnv *exec_env, BlockAddr *block_addr_cache,
                             const uint8 *start_addr, const uint8 *code_end_addr,
                             uint8 block_type, uint8 **p_else_addr,
                             uint8 **p_end_addr);
+
+bool
+wasm_loader_rebuild_metadata_stacks(WASMModuleInstance *module_inst,
+                                    WASMFunctionInstance *func_inst,
+                                    uint32 offset, Stack *addr_stack,
+                                    Stack *type_stack);
 
 #ifdef __cplusplus
 }
