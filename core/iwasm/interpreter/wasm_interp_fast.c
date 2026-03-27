@@ -1278,7 +1278,7 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
     // リストアの初期化時間の計測(終了)
     struct timespec ts1;
     clock_gettime(CLOCK_MONOTONIC, &ts1);
-    fprintf(stderr, "boot_end/restore_start, %lu\n", (uint64_t)(ts1.tv_sec*1e9) + ts1.tv_nsec);
+    fprintf(stderr, "boot_end, %lu\n", (uint64_t)(ts1.tv_sec*1e9) + ts1.tv_nsec);
 
     // debug
     if (get_restore_flag()) {
