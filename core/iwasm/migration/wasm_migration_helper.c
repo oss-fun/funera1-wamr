@@ -86,6 +86,10 @@ int debug_function_opcodes(WASMModuleInstance *module, WASMFunctionInstance* fun
 // Get fidx and offset from the code addres by metadata address map
 CodePos get_call_position(uint8 *frame_ip)
 {
+#if WASM_ENABLE_MIGRATION_ADDRESS_MAP == 0
+    wasmig_error("migration address map is disabled at build time\n");
+    return (CodePos){ 0, 0 };
+#else
     uint32 fidx, offset;
     AddressMap metadata_address_map = wasmig_address_map_load();
     if (!wasmig_address_map_get_key(metadata_address_map, (uint64_t)(uintptr_t)frame_ip, &fidx, &offset)) {
@@ -94,10 +98,15 @@ CodePos get_call_position(uint8 *frame_ip)
     }
     wasmig_debug("frame_ip: %p, fidx: %u, p_offset: %u\n", (void*)frame_ip, fidx, offset);
     return (CodePos){fidx, offset};
+#endif
 }
 
 uint64 get_call_address(uint32 fidx, uint32 offset)
 {
+#if WASM_ENABLE_MIGRATION_ADDRESS_MAP == 0
+    wasmig_error("migration address map is disabled at build time\n");
+    return (uint64)-1;
+#else
     AddressMap address_map = wasmig_address_map_load();
 
     uint64_t pc_value = 0;
@@ -106,6 +115,7 @@ uint64 get_call_address(uint32 fidx, uint32 offset)
         return -1;
     }
     return pc_value;
+#endif
 }
 
 // Get type stack from 'stack-table.msgpack'

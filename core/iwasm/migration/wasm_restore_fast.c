@@ -268,17 +268,28 @@ void restore_dirty_memory(WASMMemoryInstance **memory, FILE* memory_fp) {
 }
 
 int wasm_restore_memory(WASMModuleInstance *module, WASMMemoryInstance **memory, uint8** maddr) {
-    Array8 mem = wasmig_restore_memory();
+    struct timespec t0, t1;
 
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    Array8 mem = wasmig_restore_memory();
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    fprintf(stderr, "restore_memory_load, %lu\n", get_time(t0, t1));
+ 
     // restore page_count
     uint32 page_count = mem.size / (*memory)->num_bytes_per_page;
     // wasmig_debug("[Restore memory] page_count: %d", page_count);
+    clock_gettime(CLOCK_MONOTONIC, &t0);
     wasm_enlarge_memory(module, page_count- (*memory)->cur_page_count);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    fprintf(stderr, "restore_memory_resize, %lu\n", get_time(t0, t1));
     *maddr = page_count * (*memory)->num_bytes_per_page;
 
     // restore data
     // NOTE: Can it replace memcpy to memmove?
+    clock_gettime(CLOCK_MONOTONIC, &t0);
     memcpy((*memory)->memory_data, mem.contents, mem.size);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    fprintf(stderr, "restore_memory_copy, %lu\n", get_time(t0, t1));
     return 0;
 }
 

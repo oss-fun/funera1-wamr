@@ -26,6 +26,10 @@
 
 #if WASM_ENABLE_FAST_INTERP == 0
 bool load_metadata_stacks(uint32 fidx, uint32 offset, Stack* addr_stack, Stack* type_stack) {
+#if WASM_ENABLE_MIGRATION_STACK_MAP == 0
+    wasmig_error("migration stack map is disabled at build time\n");
+    return false;
+#else
     StackStateMap m = wasmig_stack_state_map_registry_load(fidx);
     if (!wasmig_stack_state_load_pair(m, offset, addr_stack, type_stack)) {
         wasmig_error("failed to load metadata stack\n");
@@ -34,6 +38,7 @@ bool load_metadata_stacks(uint32 fidx, uint32 offset, Stack* addr_stack, Stack* 
     // wasmig_stack_print(*addr_stack);
     // wasmig_stack_print(*type_stack);
     return true;
+#endif
 }
 
 bool materialize_stack_values(Stack addr_stack, Stack type_stack,
