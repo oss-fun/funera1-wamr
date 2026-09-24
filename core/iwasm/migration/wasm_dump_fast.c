@@ -199,10 +199,12 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
 
     // frameをtopからbottomまで走査する
     CallStackEntry entries[call_stack_size];
+    uint32 return_offsets[call_stack_size];
     cur_frame = frame;
     for (int i = 0; i < call_stack_size; i++) {
         // dump_stackは上から順に呼ばれるので、entryは下から順に格納する
         _dump_stack(exec_env, cur_frame, i, &entries[call_stack_size-i-1], (i == 0));
+        return_offsets[call_stack_size-i-1] = cur_frame->ret_offset;
         cur_frame = cur_frame->prev_frame;
     };
 
@@ -210,6 +212,18 @@ wasm_dump_stack(WASMExecEnv *exec_env, struct WASMInterpFrame *frame)
     // CallStack cs = {.size = call_stack_size, .entries = entries};
     // print_call_stack(&cs);
     wasmig_checkpoint_stack_v4(call_stack_size, entries);
+
+    FILE *fp = wamr_open_image("return_offsets.img", "wb");
+    if (!fp
+        || fwrite(&call_stack_size, sizeof(uint32), 1, fp) != 1
+        || fwrite(return_offsets, sizeof(uint32), call_stack_size, fp)
+               != (size_t)call_stack_size) {
+        if (fp)
+            fclose(fp);
+        wasmig_error("failed to checkpoint fast-interpreter return offsets\n");
+        return -1;
+    }
+    fclose(fp);
     // wasmig_debug("Success to dump frame stack\n");
 
     return 0;
