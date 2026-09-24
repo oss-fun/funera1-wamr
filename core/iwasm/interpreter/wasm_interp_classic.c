@@ -1266,7 +1266,8 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
 #undef HANDLE_OPCODE
 #endif
 
-    signal(SIGINT, &wasm_interp_sigint);
+    printf("Register checkpoint handler at SIGUSR1\n");
+    signal(SIGUSR1, &wasm_interp_sigint);
     // Clear soft-dirty bit
     clear_refs();
 

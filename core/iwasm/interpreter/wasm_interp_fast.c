@@ -1272,8 +1272,8 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
     CheckpointForbiddenList foblist = wasmig_forbidden_list_load();
 
     // register signal handler for C/R
-    printf("register signal handler for C/R at fast interpreter\n");
-    signal(SIGINT, &wasm_interp_sigint);
+    printf("register signal handler for C/R at SIGUSR1\n");
+    signal(SIGUSR1, &wasm_interp_sigint);
 
     // リストアの初期化時間の計測(終了)
     struct timespec ts1;
