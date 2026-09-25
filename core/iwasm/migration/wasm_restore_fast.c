@@ -163,6 +163,34 @@ _restore_frame(WASMExecEnv *exec_env, WASMInterpFrame *frame, WASMCSPFrame *csp,
     _restore_value_stacks(frame, func, &csp->entry, csp->entry.pc, is_stack_top);
 }
 
+static bool
+_load_return_offsets(uint32 frame_count, uint32 **return_offsets)
+{
+    FILE *fp = wamr_open_image("return_offsets.img", "rb");
+    uint32 saved_count;
+
+    if (!fp)
+        return false;
+    if (fread(&saved_count, sizeof(saved_count), 1, fp) != 1
+        || saved_count != frame_count) {
+        fclose(fp);
+        return false;
+    }
+    if (!(*return_offsets = malloc(frame_count * sizeof(uint32)))) {
+        fclose(fp);
+        return false;
+    }
+    if (fread(*return_offsets, sizeof(uint32), frame_count, fp)
+        != frame_count) {
+        free(*return_offsets);
+        *return_offsets = NULL;
+        fclose(fp);
+        return false;
+    }
+    fclose(fp);
+    return true;
+}
+
 // Allocate frame
 static WASMInterpFrame *
 _create_frame(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, 
@@ -193,9 +221,11 @@ _create_frame(WASMExecEnv *exec_env, WASMModuleInstance *module_inst,
                   cur_wasm_func->const_cell_num);
     }
 
-    /* Initialize the local variables */
-    memset(frame->lp + cur_func->param_cell_num, 0,
-           (uint32)(cur_func->local_cell_num * 4));
+    /* Clear params/locals/value-stack cells before rematerialization so
+       any slot omitted by metadata doesn't keep stale stack garbage. */
+    memset(frame->lp, 0,
+           (uint32)((cur_func->param_cell_num + cur_func->local_cell_num
+                     + cur_wasm_func->max_stack_cell_num) * sizeof(uint32)));
     
     return frame;
 }
@@ -204,6 +234,12 @@ static void
 _restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, WASMCSPFrameStack *cs)
 {
     WASMInterpFrame *frame, *prev_frame = wasm_exec_env_get_cur_frame(exec_env);
+    uint32 *return_offsets = NULL;
+
+    if (!_load_return_offsets(cs->size, &return_offsets)) {
+        wasmig_error("Failed to restore fast-interpreter return offsets\n");
+        exit(1);
+    }
 
     // Iterate call stack entries
     for (int i = 0; i < cs->size; i++) {
@@ -211,6 +247,7 @@ _restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, WASM
         
         // allocate frame
         frame = _create_frame(exec_env, module_inst, csp_frame->entry.pc, prev_frame);
+        frame->ret_offset = return_offsets[i];
         
         // restore frame
         bool is_stack_top = (i == cs->size - 1);
@@ -218,6 +255,7 @@ _restore_all_frames(WASMExecEnv *exec_env, WASMModuleInstance *module_inst, WASM
         
         prev_frame = frame;
     }
+    free(return_offsets);
     
     // 最新のフレームを設定
     wasm_exec_env_set_cur_frame(exec_env, frame);
